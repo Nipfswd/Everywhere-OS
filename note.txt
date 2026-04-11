@@ -1,0 +1,3 @@
+~Nipfswd
+
+For some reason this build works best on wsl?
