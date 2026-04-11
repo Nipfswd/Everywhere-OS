@@ -1,19 +1,18 @@
-# Makefile for Everywhere OS Kernel
+# Makefile for Everywhere OS Kernel -- grub added
 
 CC      = gcc
 LD      = ld
-OBJCOPY = objcopy
 NASM    = nasm
 
-CFLAGS  = -c -fno-builtin -fno-stack-protector -m32 -Wall -Wextra -Iinclude -I./public/sdk/inc
+CFLAGS  = -c -ffreestanding -fno-builtin -fno-stack-protector -nostdlib \
+          -m32 -Wall -Wextra -Iinclude -I./public/sdk/inc
+
 LDFLAGS = -m elf_i386 -T kernel.ld
-ASFLAGS_BIN = -f bin
-ASFLAGS_ELF = -f elf32
+
+ASFLAGS = -f elf32
 
 BUILD = build
-
-BOOTLOADER_SRC = bootloader.asm
-BOOTLOADER_BIN = $(BUILD)/bootloader.bin
+ISO   = iso
 
 ENTRY_SRC = entry.asm
 ENTRY_OBJ = $(BUILD)/entry.o
@@ -22,37 +21,41 @@ KERNEL_SRC = kernel.c
 KERNEL_OBJ = $(BUILD)/kernel.o
 
 KERNEL_ELF = $(BUILD)/kernel.elf
+OS_ISO     = $(BUILD)/os.iso
 
-OS_IMAGE = $(BUILD)/os.img
+.PHONY: all clean run
 
-.PHONY: all clean run help
-
-# This line must NOT be indented
 $(shell mkdir -p $(BUILD))
+$(shell mkdir -p $(ISO)/boot/grub)
 
-all: $(OS_IMAGE)
-
-$(BOOTLOADER_BIN): $(BOOTLOADER_SRC)
-	$(NASM) $(ASFLAGS_BIN) $(BOOTLOADER_SRC) -o $(BOOTLOADER_BIN)
+all: $(OS_ISO)
 
 $(ENTRY_OBJ): $(ENTRY_SRC)
-	$(NASM) $(ASFLAGS_ELF) $(ENTRY_SRC) -o $(ENTRY_OBJ)
+	$(NASM) $(ASFLAGS) $< -o $@
 
 $(KERNEL_OBJ): $(KERNEL_SRC)
-	$(CC) $(CFLAGS) -c $(KERNEL_SRC) -o $(KERNEL_OBJ)
+	$(CC) $(CFLAGS) $< -o $@
 
 $(KERNEL_ELF): $(ENTRY_OBJ) $(KERNEL_OBJ)
-	$(LD) $(LDFLAGS) $(ENTRY_OBJ) $(KERNEL_OBJ) -o $(KERNEL_ELF)
+	$(LD) $(LDFLAGS) $^ -o $@
 
-$(OS_IMAGE): $(BOOTLOADER_BIN) $(KERNEL_ELF)
-	cat $(BOOTLOADER_BIN) $(KERNEL_ELF) > $(OS_IMAGE)
+$(ISO)/boot/kernel.elf: $(KERNEL_ELF)
+	cp $< $@
 
-run: $(KERNEL_ELF)
-	qemu-system-i386 -kernel $(KERNEL_ELF) -m 256M
+$(ISO)/boot/grub/grub.cfg:
+	echo 'set timeout=0' > $@
+	echo 'set default=0' >> $@
+	echo '' >> $@
+	echo 'menuentry "Everywhere OS" {' >> $@
+	echo '    multiboot /boot/kernel.elf' >> $@
+	echo '    boot' >> $@
+	echo '}' >> $@
+
+$(OS_ISO): $(ISO)/boot/kernel.elf $(ISO)/boot/grub/grub.cfg
+	grub-mkrescue -o $@ $(ISO)
+
+run: $(OS_ISO)
+	qemu-system-i386 -cdrom $(OS_ISO)
 
 clean:
-	rm -rf $(BUILD)
-
-help:
-	@echo "Everywhere OS Kernel Makefile"
-	@echo "Targets: all, run, clean, help"
+	rm -rf $(BUILD) $(ISO)
