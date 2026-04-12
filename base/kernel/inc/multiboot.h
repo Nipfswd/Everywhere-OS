@@ -20,13 +20,19 @@ Author:
 
 #include <stdint.h>
 
-#define MULTIBOOT_MAGIC         0x2BADB002
+#define MULTIBOOT_MAGIC             0x2BADB002
 
-#define MULTIBOOT_FLAG_MEM      0x00000001
-#define MULTIBOOT_FLAG_MMAP     0x00000040
+#define MULTIBOOT_FLAG_MEM          0x00000001
+#define MULTIBOOT_FLAG_MMAP         0x00000040
+#define MULTIBOOT_FLAG_VBE          0x00000800
+#define MULTIBOOT_FLAG_FRAMEBUFFER  0x00001000
 
 #define MULTIBOOT_MMAP_AVAILABLE    1
 #define MULTIBOOT_MMAP_RESERVED     2
+
+#define MULTIBOOT_FRAMEBUFFER_TYPE_INDEXED  0
+#define MULTIBOOT_FRAMEBUFFER_TYPE_RGB      1
+#define MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT 2
 
 typedef struct __attribute__((packed)) _MULTIBOOT_MMAP_ENTRY {
     uint32_t Size;
@@ -57,4 +63,11 @@ typedef struct __attribute__((packed)) _MULTIBOOT_INFO {
     uint16_t VbeInterfaceSeg;
     uint16_t VbeInterfaceOff;
     uint16_t VbeInterfaceLen;
+    uint64_t FramebufferAddress;
+    uint32_t FramebufferPitch;
+    uint32_t FramebufferWidth;
+    uint32_t FramebufferHeight;
+    uint8_t  FramebufferBpp;
+    uint8_t  FramebufferType;
+    uint8_t  ColorInfo[6];
 } MULTIBOOT_INFO;
