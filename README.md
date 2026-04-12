@@ -1,7 +1,6 @@
 # Everywhere OS
 
-Everywhere OS is an expirimental operating with a simple goal -- do things better then the systems we use today. It's still early, but the kernel builds, boots with grub, and runs in qemu. More details and a proper website will come soon.
-
+Everywhere OS is an expirimental operating with a simple goal -- do things better then the systems we use today. It's still early, but the kernel builds, boots with grub, and runs in qemu. for the iso and the website go to here: https://sites.google.com/view/everywhereos/home
 # Build Instructions
 
 ## Requirements
