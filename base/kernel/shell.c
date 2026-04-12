@@ -27,6 +27,7 @@ Environment:
 #include "inc/fs.h"
 #include "inc/snake.h"
 #include "inc/box.h"
+#include "inc/mm.h"
 
 int  shift_pressed = 0;
 char user_name[32] = "User";
@@ -141,9 +142,7 @@ GetInput (
             break;
         } else if (Character == 0x08 && Index > 0) {
             Index--;
-            cursor_pos -= 2;
-            VIDEO_BUF[cursor_pos] = ' ';
-            UpdateCursor();
+            PrintChar('\b', 0x07);
         } else if (Character != 0x08 && Character != 27) {
             Buffer[Index++] = Character;
             PrintChar(Character, 0x07);
@@ -253,9 +252,7 @@ ProcessCommand (
 
                     if (Character == 0x08 && ContentIndex > 0) {
                         ContentIndex--;
-                        cursor_pos -= 2;
-                        VIDEO_BUF[cursor_pos] = ' ';
-                        UpdateCursor();
+                        PrintChar('\b', 0x07);
                         continue;
                     }
 
@@ -389,6 +386,60 @@ ProcessCommand (
 
     if (StrICmp(CommandLower, "credits") == 0) {
         Print("Main Developer Clay Sanders, Co Developer Noah Juopperi\n");
+        return;
+    }
+
+    if (StrICmp(CommandLower, "memtest") == 0) {
+        static uint32_t TestAddresses[] = {
+            0x00100000,
+            0x00200000,
+            0x00400000,
+            0x00700000,
+        };
+        static const char *Labels[] = {
+            "1MB  (kernel base) ",
+            "2MB  (kernel body) ",
+            "4MB  (mid range)   ",
+            "7MB  (top identity)",
+        };
+        MM_MEMORY_INFO Info;
+        int            Passed = 0;
+        int            Failed = 0;
+        int            I;
+
+        Print("Memory sanity test\n");
+        Print("------------------\n");
+
+        for (I = 0; I < 4; I++) {
+            uint32_t  Addr    = TestAddresses[I];
+            uint32_t *Ptr     = (uint32_t *)Addr;
+            uint32_t  Pattern = 0xA5A5A5A5;
+            uint32_t  Old;
+            int       Ok;
+
+            Old   = *Ptr;
+            *Ptr  = Pattern;
+            Ok    = (*Ptr == Pattern) ? 1 : 0;
+            *Ptr  = Old;
+
+            MmQueryVirtualMemory(0, Addr, &Info);
+
+            Print("  0x"); PrintInt((int)Addr);
+            Print(" ["); Print(Labels[I]); Print("]");
+            Print(" R/W:"); Print(Ok ? "OK  " : "FAIL");
+            Print(" State:");
+            if (Info.State == MmRegionCommitted)     Print("Committed");
+            else if (Info.State == MmRegionReserved) Print("Reserved ");
+            else                                     Print("Free     ");
+            Print("\n");
+
+            if (Ok) Passed++; else Failed++;
+        }
+
+        Print("------------------\n");
+        Print("Passed: "); PrintInt(Passed);
+        Print("  Failed: "); PrintInt(Failed);
+        Print("\n");
         return;
     }
 

@@ -17,6 +17,7 @@ Author:
 #pragma once
 
 #include "types.h"
+#include "multiboot.h"
 
-VOID         PagingInitialize(VOID);
+VOID         PagingInitialize(MULTIBOOT_INFO *MbInfo);
 unsigned int PagingGetCr3(VOID);

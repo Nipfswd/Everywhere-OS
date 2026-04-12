@@ -9,11 +9,9 @@ Abstract:
     x86 paging initialisation. Allocates a page directory and initial
     page tables from a small static pool, identity-maps the first 8 MB
     of physical memory (covering the kernel image, stack, and early heap),
-    then enables paging by setting CR0.PG.
-
-    After PagingInitialize returns the MMU is active and every address
-    the kernel uses is still valid because physical == virtual for the
-    identity-mapped range.
+    maps the VESA linear framebuffer region (up to 8 MB at whatever
+    physical address GRUB places it), then enables paging by setting
+    CR0.PG.
 
 Author:
 
@@ -22,6 +20,7 @@ Author:
 --*/
 
 #include "inc/paging.h"
+#include "inc/multiboot.h"
 
 #define PAGE_SIZE       0x1000
 #define PAGE_PRESENT    0x01
@@ -29,23 +28,21 @@ Author:
 #define PAGE_FRAME_MASK 0xFFFFF000
 
 /*
- * Static page directory and enough page tables to cover 8 MB.
- * Each page table covers 4 MB (1024 entries * 4 KB), so 2 tables suffice.
- * Aligned to 4 KB as required by CR3.
+ * Low identity map: first 8 MB (2 page tables).
+ * Framebuffer map: up to 8 MB for the framebuffer (2 page tables).
+ * Total static page tables: 4.
  */
-#define IDENTITY_MB     8
-#define PT_COUNT        (IDENTITY_MB / 4)
+#define IDENTITY_MB  8
+#define PT_LOW       (IDENTITY_MB / 4)   /* 2 */
+#define FB_MB        8
+#define PT_FB        (FB_MB / 4)         /* 2 */
+#define PT_COUNT     (PT_LOW + PT_FB)    /* 4 */
 
-static unsigned int PageDirectory[1024] __attribute__((aligned(4096)));
-static unsigned int PageTables[PT_COUNT][1024] __attribute__((aligned(4096)));
+static unsigned int PageDirectory[1024]          __attribute__((aligned(4096)));
+static unsigned int PageTables[PT_COUNT][1024]   __attribute__((aligned(4096)));
 
-/*++
-
-Routine Description:
-
-    Reads the current CR3.
-
---*/
+/* Framebuffer base stored by PagingInitialize for later use */
+static unsigned int g_FbBase = 0;
 
 static unsigned int
 PagingReadCr3 (
@@ -56,14 +53,6 @@ PagingReadCr3 (
     __asm__ volatile ("mov %%cr3, %0" : "=r"(Value));
     return Value;
 }
-
-/*++
-
-Routine Description:
-
-    Returns the physical address of the kernel page directory.
-
---*/
 
 unsigned int
 PagingGetCr3 (
@@ -77,39 +66,71 @@ PagingGetCr3 (
 
 Routine Description:
 
-    Initialises paging.
+    Initialises paging with an identity map of the first 8 MB plus a
+    direct map of the VESA framebuffer region.
 
-    1. Zeros the page directory.
-    2. For each page table that covers the identity-mapped range,
-       fills every PTE with physical_address | PRESENT | WRITE.
-    3. Installs those page tables into the page directory.
-    4. Loads CR3, sets CR0.PG | CR0.PE, executes a far jump to flush
-       the prefetch queue and reload CS with the new GDT selector.
+    MbInfo may be NULL (e.g. if called before multiboot is parsed); in
+    that case only the low identity map is installed and the framebuffer
+    will fault if accessed — VideoInitialize handles this by checking
+    the address before writing.
 
 --*/
 
 VOID
 PagingInitialize (
-    VOID
+    MULTIBOOT_INFO *MbInfo
     )
 {
-    unsigned int  i;
-    unsigned int  t;
-    unsigned int  PhysicalAddress;
+    unsigned int i, t;
+    unsigned int PhysicalAddress;
+    unsigned int FbBase    = 0;
+    unsigned int FbPages   = 0;
+    unsigned int FbDirBase = 0;   /* first PD index for FB tables */
 
     /* Zero the page directory */
     for (i = 0; i < 1024; i++) {
         PageDirectory[i] = 0;
     }
 
-    /* Fill page tables and wire them into the directory */
-    for (t = 0; t < PT_COUNT; t++) {
+    /* --- Low identity map: 0..8MB --- */
+    for (t = 0; t < PT_LOW; t++) {
         for (i = 0; i < 1024; i++) {
-            PhysicalAddress          = (t * 1024 + i) * PAGE_SIZE;
-            PageTables[t][i]         = PhysicalAddress | PAGE_PRESENT | PAGE_WRITE;
+            PhysicalAddress  = (t * 1024 + i) * PAGE_SIZE;
+            PageTables[t][i] = PhysicalAddress | PAGE_PRESENT | PAGE_WRITE;
+        }
+        PageDirectory[t] = (unsigned int)PageTables[t] | PAGE_PRESENT | PAGE_WRITE;
+    }
+
+    /* --- Framebuffer map --- */
+    if (MbInfo && (MbInfo->Flags & MULTIBOOT_FLAG_FRAMEBUFFER)) {
+        FbBase  = (unsigned int)MbInfo->FramebufferAddress;
+        g_FbBase = FbBase;
+
+        /* Number of pages needed: width * height * 4 bytes, rounded up */
+        {
+            unsigned int FbBytes = MbInfo->FramebufferPitch * MbInfo->FramebufferHeight;
+            FbPages = (FbBytes + PAGE_SIZE - 1) / PAGE_SIZE;
+            if (FbPages > PT_FB * 1024) FbPages = PT_FB * 1024;
         }
 
-        PageDirectory[t] = (unsigned int)PageTables[t] | PAGE_PRESENT | PAGE_WRITE;
+        /* Page directory index where the FB starts */
+        FbDirBase = FbBase >> 22;   /* top 10 bits */
+
+        for (t = 0; t < PT_FB; t++) {
+            unsigned int DirIdx = FbDirBase + t;
+            if (DirIdx >= 1024) break;
+
+            for (i = 0; i < 1024; i++) {
+                unsigned int PageIdx = t * 1024 + i;
+                if (PageIdx < FbPages) {
+                    PhysicalAddress          = FbBase + PageIdx * PAGE_SIZE;
+                    PageTables[PT_LOW + t][i] = PhysicalAddress | PAGE_PRESENT | PAGE_WRITE;
+                } else {
+                    PageTables[PT_LOW + t][i] = 0;
+                }
+            }
+            PageDirectory[DirIdx] = (unsigned int)PageTables[PT_LOW + t] | PAGE_PRESENT | PAGE_WRITE;
+        }
     }
 
     /* Load CR3 */
@@ -120,7 +141,7 @@ PagingInitialize (
         : "memory"
     );
 
-    /* Set CR0.PG (bit 31) - CR0.PE (bit 0) is already set by the BIOS/GRUB */
+    /* Set CR0.PG */
     __asm__ volatile (
         "mov %%cr0,       %%eax  \n\t"
         "or  $0x80000000, %%eax  \n\t"
@@ -130,10 +151,5 @@ PagingInitialize (
         : "eax", "memory"
     );
 
-    /*
-     * Flush the prefetch queue with a near jump.  A far jump is not
-     * needed here because we are not changing CS - the GDT was already
-     * reloaded by GdtInitialize.
-     */
     __asm__ volatile ("jmp 1f\n1:");
 }

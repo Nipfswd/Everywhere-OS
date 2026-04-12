@@ -6,40 +6,21 @@ Module Name:
 
 Abstract:
 
-    This module implements the text-mode snake game.
+    This module implements the snake game.
 
 Author:
 
     Noah Juopperi <nipfswd@gmail.com>
     Clay Sanders (made first kernel) <claylikepython@yahoo.com>
 
-Environment:
-
-    Text-mode VGA, PC keyboard controller.
-
 --*/
 
 #include "inc/snake.h"
 #include "inc/video.h"
+#include "inc/shell.h"
 #include "inc/io.h"
 
 int high_score = 0;
-
-/*++
-
-Routine Description:
-
-    Performs a busy-wait delay.
-
-Arguments:
-
-    Ticks - Approximate delay factor.
-
-Return Value:
-
-    None.
-
---*/
 
 static VOID
 DelayTicks (
@@ -52,22 +33,6 @@ DelayTicks (
     }
 }
 
-/*++
-
-Routine Description:
-
-    Performs an approximate delay in seconds.
-
-Arguments:
-
-    Seconds - Number of seconds to delay.
-
-Return Value:
-
-    None.
-
---*/
-
 VOID
 DelaySeconds (
     int Seconds
@@ -79,23 +44,6 @@ DelaySeconds (
         DelayTicks(12000000);
     }
 }
-
-/*++
-
-Routine Description:
-
-    Implements a simple snake game. Displays score, moves the snake,
-    updates the high score, and reboots on exit.
-
-Arguments:
-
-    None.
-
-Return Value:
-
-    None.
-
---*/
 
 VOID
 SnakeGame (
@@ -125,27 +73,22 @@ SnakeGame (
     ClearScreen();
 
     for (;;) {
-        int OldCursor;
-
-        OldCursor  = cursor_pos;
-        cursor_pos = 0;
-
+        /* Print score bar at row 0 without touching game area */
+        VideoSetConsoleCursor(0, 0);
         Print("Score: ");
         PrintInt(Score);
         Print(" | High Score: ");
         PrintInt(high_score);
         Print(" | WASD to Move, Q to Quit");
 
-        cursor_pos = OldCursor;
-        UpdateCursor();
-
-        VIDEO_BUF[(FoodY * 80 + FoodX) * 2]     = '@';
-        VIDEO_BUF[(FoodY * 80 + FoodX) * 2 + 1] = 0x04;
+        /* Draw food and snake via direct cell writes */
+        VideoSetCell((uint32_t)FoodX, (uint32_t)FoodY, '@', 0x04);
 
         for (Index = 0; Index < Length; Index++) {
-            VIDEO_BUF[(SnakeY[Index] * 80 + SnakeX[Index]) * 2]     =
-                (Index == 0) ? 'O' : '*';
-            VIDEO_BUF[(SnakeY[Index] * 80 + SnakeX[Index]) * 2 + 1] = 0x02;
+            VideoSetCell((uint32_t)SnakeX[Index],
+                         (uint32_t)SnakeY[Index],
+                         (Index == 0) ? 'O' : '*',
+                         0x02);
         }
 
         DelayTicks(6000000);
@@ -155,36 +98,22 @@ SnakeGame (
 
             ScanCode = inb(0x60);
 
-            if (ScanCode == 0x11 && DeltaY != 1) {
-                DeltaX = 0;
-                DeltaY = -1;
-            }
-
-            if (ScanCode == 0x1E && DeltaX != 1) {
-                DeltaX = -1;
-                DeltaY = 0;
-            }
-
-            if (ScanCode == 0x1F && DeltaY != -1) {
-                DeltaX = 0;
-                DeltaY = 1;
-            }
-
-            if (ScanCode == 0x20 && DeltaX != -1) {
-                DeltaX = 1;
-                DeltaY = 0;
-            }
-
-            if (ScanCode == 0x10) {
-                break;
-            }
+            if (ScanCode == 0x11 && DeltaY != 1)  { DeltaX =  0; DeltaY = -1; }
+            if (ScanCode == 0x1E && DeltaX != 1)  { DeltaX = -1; DeltaY =  0; }
+            if (ScanCode == 0x1F && DeltaY != -1) { DeltaX =  0; DeltaY =  1; }
+            if (ScanCode == 0x20 && DeltaX != -1) { DeltaX =  1; DeltaY =  0; }
+            if (ScanCode == 0x10) { break; }
         }
 
-        VIDEO_BUF[(SnakeY[Length-1] * 80 + SnakeX[Length-1]) * 2] = ' ';
+        /* Erase tail */
+        VideoSetCell((uint32_t)SnakeX[Length - 1],
+                     (uint32_t)SnakeY[Length - 1],
+                     ' ', 0x07);
 
+        /* Advance snake */
         for (Index = Length - 1; Index > 0; Index--) {
-            SnakeX[Index] = SnakeX[Index-1];
-            SnakeY[Index] = SnakeY[Index-1];
+            SnakeX[Index] = SnakeX[Index - 1];
+            SnakeY[Index] = SnakeY[Index - 1];
         }
 
         SnakeX[0] += DeltaX;
@@ -197,15 +126,8 @@ SnakeGame (
 
         if (SnakeX[0] == FoodX && SnakeY[0] == FoodY) {
             Score++;
-
-            if (Length < MAX_SNAKE) {
-                Length++;
-            }
-
-            if (Score > high_score) {
-                high_score = Score;
-            }
-
+            if (Length < MAX_SNAKE) Length++;
+            if (Score > high_score) high_score = Score;
             FoodX = (FoodX * 3 + 7) % 70 + 5;
             FoodY = (FoodY * 7 + 3) % 20 + 2;
         }
@@ -217,7 +139,6 @@ SnakeGame (
     PrintInt(Score);
     Print("\nHigh Score: ");
     PrintInt(high_score);
-    Print("\nPress any key to reboot...");
-    (void)inb(0x60);
-    RebootSystem();
+    Print("\nPress any key to continue...");
+    (void)GetChar();
 }

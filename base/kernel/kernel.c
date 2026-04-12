@@ -15,10 +15,6 @@ Author:
     Noah Juopperi <nipfswd@gmail.com>
     Clay Sanders (made first kernel) <claylikepython@yahoo.com>
 
-Environment:
-
-    Text-mode VGA, PC keyboard controller.
-
 --*/
 
 #include "inc/types.h"
@@ -30,10 +26,6 @@ Environment:
 #include "inc/multiboot.h"
 #include "inc/mm.h"
 #include "osver.h"
-
-#define ATTR_NORMAL 0x07
-#define ATTR_GREEN  0x0A
-#define ATTR_RED    0x0C
 
 static VOID
 PrintStatus (
@@ -76,6 +68,21 @@ kernelMain (
 {
     char Buffer[128];
 
+    /*
+     * Initialise the framebuffer first — everything else calls Print.
+     * If GRUB did not provide a framebuffer (flag bit 12 clear) we pass
+     * zeros and VideoInitialize falls back to VGA text mode.
+     */
+    if (MbInfo && (MbInfo->Flags & MULTIBOOT_FLAG_FRAMEBUFFER)) {
+        VideoInitialize(MbInfo->FramebufferAddress,
+                        MbInfo->FramebufferWidth,
+                        MbInfo->FramebufferHeight,
+                        MbInfo->FramebufferPitch,
+                        MbInfo->FramebufferBpp);
+    } else {
+        VideoInitialize(0, 0, 0, 0, 0);
+    }
+
     ClearScreen();
     Print(OS_NAME " v" OS_VERSION_STRING "\n\n");
 
@@ -85,7 +92,7 @@ kernelMain (
     IdtInitialize();
     PrintStatus("IDT initialisation...    ", 1);
 
-    PagingInitialize();
+    PagingInitialize(MbInfo);
     PrintStatus("Paging initialisation... ", 1);
 
     MmInitialize(MbInfo);

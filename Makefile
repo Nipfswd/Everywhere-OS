@@ -84,6 +84,7 @@ $(ISO)/boot/kernel.elf: $(KERNEL_ELF)
 $(ISO)/boot/grub/grub.cfg:
 	echo 'set timeout=0' > $@
 	echo 'set default=0' >> $@
+	echo 'set gfxpayload=1024x768x32' >> $@
 	echo '' >> $@
 	echo 'menuentry "Everywhere OS" {' >> $@
 	echo '    multiboot /boot/kernel.elf' >> $@
@@ -94,7 +95,7 @@ $(OS_ISO): $(ISO)/boot/kernel.elf $(ISO)/boot/grub/grub.cfg
 	grub-mkrescue -o $@ $(ISO)
 
 run: $(OS_ISO)
-	qemu-system-i386 -cdrom $(OS_ISO)
+	qemu-system-i386 -cdrom $(OS_ISO) -vga std
 
 clean:
 	rm -rf $(BUILD) $(ISO)
