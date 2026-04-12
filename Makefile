@@ -16,6 +16,7 @@ BUILD = build
 ISO   = iso
 
 KERNEL_DIR = base/kernel
+MM_DIR     = base/kernel/mm
 
 ENTRY_SRC = entry.asm
 ENTRY_OBJ = $(BUILD)/entry.o
@@ -30,7 +31,20 @@ KERNEL_SRCS = \
     $(KERNEL_DIR)/snake.c  \
     $(KERNEL_DIR)/box.c
 
+MM_SRCS = \
+    $(MM_DIR)/mminit.c   \
+    $(MM_DIR)/pfnlist.c  \
+    $(MM_DIR)/allocpag.c \
+    $(MM_DIR)/allocvm.c  \
+    $(MM_DIR)/freevm.c   \
+    $(MM_DIR)/vadtree.c  \
+    $(MM_DIR)/mmfault.c  \
+    $(MM_DIR)/protect.c  \
+    $(MM_DIR)/queryvm.c  \
+    $(MM_DIR)/mmsup.c
+
 KERNEL_OBJS = $(patsubst $(KERNEL_DIR)/%.c, $(BUILD)/%.o, $(KERNEL_SRCS))
+MM_OBJS     = $(patsubst $(MM_DIR)/%.c,     $(BUILD)/mm_%.o, $(MM_SRCS))
 
 KERNEL_ELF = $(BUILD)/kernel.elf
 OS_ISO     = $(BUILD)/os.iso
@@ -48,7 +62,10 @@ $(ENTRY_OBJ): $(ENTRY_SRC)
 $(BUILD)/%.o: $(KERNEL_DIR)/%.c
 	$(CC) $(CFLAGS) $< -o $@
 
-$(KERNEL_ELF): $(ENTRY_OBJ) $(KERNEL_OBJS)
+$(BUILD)/mm_%.o: $(MM_DIR)/%.c
+	$(CC) $(CFLAGS) $< -o $@
+
+$(KERNEL_ELF): $(ENTRY_OBJ) $(KERNEL_OBJS) $(MM_OBJS)
 	$(LD) $(LDFLAGS) $^ -o $@
 
 $(ISO)/boot/kernel.elf: $(KERNEL_ELF)
