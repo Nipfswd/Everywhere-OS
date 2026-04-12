@@ -5,6 +5,7 @@ LD      = ld
 NASM    = nasm
 
 CFLAGS  = -c -ffreestanding -fno-builtin -fno-stack-protector -nostdlib \
+          -fno-pic -fno-pie \
           -m32 -Wall -Wextra \
           -I./base/kernel/inc \
           -I./public/sdk/inc
@@ -21,15 +22,21 @@ MM_DIR     = base/kernel/mm
 ENTRY_SRC = entry.asm
 ENTRY_OBJ = $(BUILD)/entry.o
 
+ISR_SRC = $(KERNEL_DIR)/isr.asm
+ISR_OBJ = $(BUILD)/isr.o
+
 KERNEL_SRCS = \
-    $(KERNEL_DIR)/kernel.c \
-    $(KERNEL_DIR)/io.c     \
-    $(KERNEL_DIR)/video.c  \
-    $(KERNEL_DIR)/string.c \
-    $(KERNEL_DIR)/fs.c     \
-    $(KERNEL_DIR)/shell.c  \
-    $(KERNEL_DIR)/snake.c  \
-    $(KERNEL_DIR)/box.c
+    $(KERNEL_DIR)/kernel.c  \
+    $(KERNEL_DIR)/io.c      \
+    $(KERNEL_DIR)/video.c   \
+    $(KERNEL_DIR)/string.c  \
+    $(KERNEL_DIR)/fs.c      \
+    $(KERNEL_DIR)/shell.c   \
+    $(KERNEL_DIR)/snake.c   \
+    $(KERNEL_DIR)/box.c     \
+    $(KERNEL_DIR)/gdt.c     \
+    $(KERNEL_DIR)/idt.c     \
+    $(KERNEL_DIR)/paging.c
 
 MM_SRCS = \
     $(MM_DIR)/mminit.c   \
@@ -43,7 +50,7 @@ MM_SRCS = \
     $(MM_DIR)/queryvm.c  \
     $(MM_DIR)/mmsup.c
 
-KERNEL_OBJS = $(patsubst $(KERNEL_DIR)/%.c, $(BUILD)/%.o, $(KERNEL_SRCS))
+KERNEL_OBJS = $(patsubst $(KERNEL_DIR)/%.c, $(BUILD)/%.o,    $(KERNEL_SRCS))
 MM_OBJS     = $(patsubst $(MM_DIR)/%.c,     $(BUILD)/mm_%.o, $(MM_SRCS))
 
 KERNEL_ELF = $(BUILD)/kernel.elf
@@ -59,13 +66,16 @@ all: $(OS_ISO)
 $(ENTRY_OBJ): $(ENTRY_SRC)
 	$(NASM) $(ASFLAGS) $< -o $@
 
+$(ISR_OBJ): $(ISR_SRC)
+	$(NASM) $(ASFLAGS) $< -o $@
+
 $(BUILD)/%.o: $(KERNEL_DIR)/%.c
 	$(CC) $(CFLAGS) $< -o $@
 
 $(BUILD)/mm_%.o: $(MM_DIR)/%.c
 	$(CC) $(CFLAGS) $< -o $@
 
-$(KERNEL_ELF): $(ENTRY_OBJ) $(KERNEL_OBJS) $(MM_OBJS)
+$(KERNEL_ELF): $(ENTRY_OBJ) $(ISR_OBJ) $(KERNEL_OBJS) $(MM_OBJS)
 	$(LD) $(LDFLAGS) $^ -o $@
 
 $(ISO)/boot/kernel.elf: $(KERNEL_ELF)

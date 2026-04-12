@@ -4,6 +4,8 @@ SECTIONS
 {
     . = 0x00100000;
 
+    __start = .;
+
     .multiboot :
     {
         KEEP(*(.multiboot))
@@ -29,4 +31,6 @@ SECTIONS
         *(.bss*)
         *(COMMON)
     }
+
+    __end = .;
 }
