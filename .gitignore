@@ -1,0 +1,10 @@
+## DO NOT DELETE!!!
+## Without this file i will push binaries to github, not okay!!
+
+*.img
+*.bin
+*.iso
+*.o
+
+build/
+dist/
