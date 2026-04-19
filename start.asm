@@ -56,7 +56,7 @@ stublet:
 	call	main
 	jmp		$
 
-; GDT
+; Global Descriptor Table
 global gdt_flush
 extern gp
 gdt_flush:
@@ -70,8 +70,16 @@ gdt_flush:
 	jmp 0x08:flush2
 flush2:
 	ret
-	
+
+; Interrupt Descriptor Table
+global idt_load
+extern idtp
+idt_load:
+	lidt [idtp]
+	ret
+
 ; Interrupt Service Routines
+
 
 ; BSS Section
 SECTION .bss

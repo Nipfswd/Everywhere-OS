@@ -128,6 +128,7 @@ outportb(
 int
 main() {
 	gdt_install();
+	idt_install();
 	init_video();
 	puts("Hello world! And welcome to everywhere OS\n"); // what to print :O
 	for (;;);
