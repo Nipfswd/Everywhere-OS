@@ -14,3 +14,4 @@ Fixes
 00010 InitMouse leaves stale ACK bytes in PS/2 buffer - added flush loop after initialization
 00011 Multiboot header does not request video mode - added 320x200x8 video mode fields so GRUB sets mode 13h before kernel entry
 00012 Screen flickers every frame - added double buffering with off-screen back buffer and FlipBuffers copy to VGA
+00013 Entier OS is a single kernel.c file - split into multi-module layout
