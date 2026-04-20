@@ -52,3 +52,10 @@ Features
 00029 OS reboots on startup after HAL init - no GDT defined so IDT used unknown selector 0x08, added explicit GDT in entry.asm with flat code/data segments
 00030 Unhandled IRQs (timer, etc.) triple-fault because IDT entries were null - added IrqIgnoreStub default handler for all 256 vectors
 00031 PIC mask restore after remap could leave stray IRQs unmasked - now masks ALL IRQs first, then only unmasks IRQ2 (cascade) and IRQ12 (mouse)
+
+(mm)
+00032 No memory manager exists - added base/ntos/mm/ with physical page frame allocator (bitmap-based PFN database), kernel pool heap allocator (first-fit free list with coalescing), and MM initialization from multiboot memory map, matching WS2003 ntos/mm layout
+00033 No _kernel_end linker symbol defined - added to kernel.ld so MM knows where kernel image ends and free memory begins
+
+(keyboard)
+00034 GetKeyChar reads port 0x64 twice - between reads, IRQ12 ISR can drain the mouse byte, causing second read to show empty buffer while code falls through to read garbage from 0x60, which can be 0x01 (ESC scancode) triggering RebootSystem - now reads status register only once

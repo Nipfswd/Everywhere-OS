@@ -45,13 +45,16 @@ Return Value:
 --*/
 
 char GetKeyChar(void) {
-    if (!(inb(0x64) & 1)) return 0;
-
     uint8_t status = inb(0x64);
 
-    /* Bit 5 set means this byte is from the mouse, not the keyboard */
+    /* No data available */
+    if (!(status & 1)) return 0;
+
+    /* Bit 5 set means this byte is from the mouse, not the keyboard.
+       Mouse is now interrupt-driven via IRQ12, but still discard here
+       in case a stray mouse byte is in the buffer. */
     if (status & 0x20) {
-        inb(0x60); /* discard mouse byte here; UpdateMouse handles it */
+        inb(0x60);
         return 0;
     }
 

@@ -26,6 +26,11 @@ NTOS_SRC = base/ntos/ke/io.c \
            base/ntos/ke/keyboard.c \
            base/ntos/ke/window.c
 
+# Memory Manager (base\ntos\mm)
+MM_SRC = base/ntos/mm/mminit.c \
+         base/ntos/mm/pfnlist.c \
+         base/ntos/mm/allocpag.c
+
 # HAL (base\hals\halx86)
 HAL_SRC = base/hals/halx86/halinit.c
 HAL_ASM_SRC = base/hals/halx86/irq12.asm
@@ -42,7 +47,7 @@ SHELL_SRC = shell/explorer/desktop.c \
 # Main entry
 MAIN_SRC = kernel.c
 
-ALL_C_SRC = $(NTOS_SRC) $(HAL_SRC) $(SHELL_SRC) $(MAIN_SRC)
+ALL_C_SRC = $(NTOS_SRC) $(MM_SRC) $(HAL_SRC) $(SHELL_SRC) $(MAIN_SRC)
 ALL_C_OBJ = $(patsubst %.c,$(BUILD)/%.o,$(ALL_C_SRC))
 
 KERNEL_ELF = $(BUILD)/kernel.elf
@@ -52,6 +57,7 @@ OS_ISO     = $(BUILD)/os.iso
 
 $(shell mkdir -p $(BUILD))
 $(shell mkdir -p $(BUILD)/base/ntos/ke)
+$(shell mkdir -p $(BUILD)/base/ntos/mm)
 $(shell mkdir -p $(BUILD)/base/hals/halx86)
 $(shell mkdir -p $(BUILD)/shell/explorer)
 $(shell mkdir -p $(ISO)/boot/grub)

@@ -29,4 +29,6 @@ SECTIONS
         *(.bss*)
         *(COMMON)
     }
+
+    _kernel_end = .;
 }

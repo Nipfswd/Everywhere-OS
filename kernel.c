@@ -23,6 +23,7 @@ Environment:
 --*/
 
 #include "ke.h"
+#include "mm.h"
 #include "explorer.h"
 
 /*++
@@ -45,6 +46,7 @@ Return Value:
 
 void kernelMain(uint32_t* mbi) {
     SetupFramebuffer(mbi);
+    MmInitSystem(mbi);
     InitFont();
     InitMouse();
     HalInitInterrupts();
