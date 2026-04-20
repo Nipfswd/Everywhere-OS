@@ -15,3 +15,11 @@ Fixes
 00011 Multiboot header does not request video mode - added 320x200x8 video mode fields so GRUB sets mode 13h before kernel entry
 00012 Screen flickers every frame - added double buffering with off-screen back buffer and FlipBuffers copy to VGA
 00013 Entier OS is a single kernel.c file - split into multi-module layout
+
+# 12:30
+
+Features
+(window)
+00014 Added fullscreen button to window title bar - click to expand window to fill screen, click again to restore original size
+00015 Dragging is disabled while a window is fullscreen to prevent accidental moves
+00016 Window physics (velocity/bounce) are skipped while fullscreen
