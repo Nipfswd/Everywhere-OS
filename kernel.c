@@ -96,6 +96,33 @@ void RebootSystem(void) {
 #define SCR_H 200
 
 uint8_t* FB = (uint8_t*)0xA0000;
+static uint8_t backbuf[SCR_W * SCR_H];
+
+/*++
+
+Routine Description:
+
+    Copies the back buffer to the VGA framebuffer in one operation,
+    eliminating visible flicker.
+
+Arguments:
+
+    None.
+
+Return Value:
+
+    None.
+
+--*/
+
+void FlipBuffers(void) {
+    uint32_t* dst = (uint32_t*)FB;
+    uint32_t* src = (uint32_t*)backbuf;
+    int count = (SCR_W * SCR_H) / 4;
+    for (int i = 0; i < count; i++) {
+        dst[i] = src[i];
+    }
+}
 
 /*++
 
@@ -138,7 +165,7 @@ Return Value:
 
 void PutPixel(int x, int y, uint8_t c) {
     if (x < 0 || x >= SCR_W || y < 0 || y >= SCR_H) return;
-    FB[y * SCR_W + x] = c;
+    backbuf[y * SCR_W + x] = c;
 }
 
 /*++
@@ -168,7 +195,7 @@ void FillRect(int x, int y, int w, int h, uint8_t c) {
         for (int xx = 0; xx < w; xx++) {
             int px = x + xx;
             if (px < 0 || px >= SCR_W) continue;
-            FB[py * SCR_W + px] = c;
+            backbuf[py * SCR_W + px] = c;
         }
     }
 }
@@ -1252,6 +1279,7 @@ void kernelMain(void) {
 
         DrawTaskbar();
         DrawMouseCursor();
+        FlipBuffers();
 
         for (volatile int d = 0; d < 30000; d++) { __asm__ __volatile__("nop"); }
     }
