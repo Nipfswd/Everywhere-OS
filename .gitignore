@@ -1,0 +1,16 @@
+## DO NOT DELETE THIS!!!!
+
+#build directories
+iso/
+build/
+
+# binaries
+*.elf
+*.bin
+*.img
+*.exe
+*.dll
+*.iso
+
+# privacy
+*.env

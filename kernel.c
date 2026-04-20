@@ -1,1426 +1,537 @@
 /*++
 
-Module Name:
+    Everywhere OS -  GUI Kernel (Single C File For Now, Until It Can Not Be One)
+    ------------------------------------------------------
+    - VGA Mode 13h (320x200x256)
+    - PS/2 Mouse
+    - Desktop + Windows 
+    - Shell Window
+    - Notes Window
+    - Snake Window
+    - Taskbar + Icons (lightweight)
+    - Boot message:
+      "Why Go Anywhere When You Are Everywhere? Everywhere OS"
 
-    kernel.c
-    
-Abstract:
-
-    This module implements a simple text-mode shell with a note system,
-    a snake game, and a small BOX scripting language.
-
-Author:
-
-    Noah Juopperi <nipfswd@gmail.com>
-    Clay Sanders (made first kernel) <claylikepython@yahoo.com>
-Environment:
-
-    Text-mode VGA, PC keyboard controller.
-
-NOTES:
-
-    Perhaps we'll migrate this into multiple files.
-    
 --*/
 
 #include <stdint.h>
-// version and OS name header in public/sdk/inc/
-#include "osver.h"
 
-// define Windows ish style types for compatibility
-typedef void VOID;
-typedef unsigned char UCHAR;
-typedef int INT;
+/* ========== Basic I/O ========== */
 
-volatile char* VIDEO_BUF = (volatile char*)0xb8000;
-
-#define MAX_FILES       10
-#define MAX_FILENAME    32
-#define MAX_CONTENT     512
-#define MAX_SNAKE       100
-
-typedef struct _FILE_ENTRY {
-    char name[MAX_FILENAME];
-    char content[MAX_CONTENT];
-    int  active;
-} FILE_ENTRY, *PFILE_ENTRY;
-
-FILE_ENTRY file_system[MAX_FILES];
-int        file_count    = 0;
-int        cursor_pos    = 0;
-int        shift_pressed = 0;
-int        high_score    = 0;
-char       user_name[32] = "User";
-
-/*++
-
-Routine Description:
-
-    Writes a byte to an I/O port.
-    
-Arguments:
-
-    Port - IO port.
-    Data - Byte to write
-    
-Return Value:
-
-    None
-    
---*/
-
-VOID
-outb (
-    uint16_t Port,
-    uint8_t  Data
-    )
-{
-    __asm__("outb %1, %0" : : "dN" (Port), "a" (Data));
+static inline void outb(uint16_t port, uint8_t val) {
+    __asm__ __volatile__("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
-/*++
-
-Routine Description:
-
-    Reads a byte from an IO port.
-    
-Arguments:
-
-    Port - IO port.
-    
-Return Value:
-
-    Byte read.
-    
---*/
-
-uint8_t
-inb (
-    uint16_t Port
-    )
-{
-    uint8_t Result;
-
-    __asm__("inb %1, %0" : "=a" (Result) : "Nd" (Port));
-    return Result;
+static inline uint8_t inb(uint16_t port) {
+    uint8_t ret;
+    __asm__ __volatile__("inb %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
 }
 
-/*++
+/* ========== Reboot ========== */
 
-Routine Description:
-
-    Attempts to reboot the machine via the keyboard controller.
-
-Arguments:
-
-    None.
-
-Return Value:
-
-    None. Does not return on success.
-
---*/
-
-VOID
-RebootSystem (
-    VOID
-    )
-{
-    //Wait for input buffer to clear
-    while (inb(0x64) & 0x02) {
-    }
-
-    //pulse reset line.
+void RebootSystem(void) {
+    while (inb(0x64) & 0x02) { }
     outb(0x64, 0xFE);
-
-    //if reboot fails, spin 4ever !.
-    for (;;) {
-    }
+    for (;;) { }
 }
 
-/*++
+/* ========== VGA Mode 13h ========== */
 
-Routine Description:
+#define SCR_W 320
+#define SCR_H 200
 
-    Updates the hardware text-mode cursor position.
+uint8_t* FB = (uint8_t*)0xA0000;
 
-Arguments:
-
-    None.
-
-Return Value:
-
-    None.
-
---*/
-
-VOID
-UpdateCursor (
-    VOID
-    )
-{
-    uint16_t Position;
-
-    Position = (uint16_t)(cursor_pos / 2);
-
-    outb(0x3D4, 0x0F);
-    outb(0x3D5, (uint8_t)(Position & 0xFF));
-
-    outb (0x3D4, 0x0E);
-    outb(0x3D5, (uint8_t)((Position >> 8) & 0xFF));
+void SetMode13h(void) {
+    __asm__ __volatile__(
+        "mov $0x13, %%ax\n"
+        "int $0x10\n"
+        :
+        :
+        : "ax"
+    );
 }
 
-/*++
-
-Routine Description:
-
-    Computes the length of a null-terminated string.
-
-Arguments:
-
-    String - Pointer to string.
-
-Return Value:
-
-    Length of string.
-
---*/
-
-int
-StrLen (
-    const char* String
-    )
-{
-    int Length;
-
-    Length = 0;
-    while (String[Length]) {
-        Length++;
-    }
-
-    return Length;
+void PutPixel(int x, int y, uint8_t c) {
+    if (x < 0 || x >= SCR_W || y < 0 || y >= SCR_H) return;
+    FB[y * SCR_W + x] = c;
 }
 
-/*++
-
-Routine Description:
-
-    Copies a null-terminated string.
-
-Arguments:
-
-    Destination - Destination buffer.
-    Source      - Source string.
-
-Return Value:
-
-    None.
-
---*/
-
-VOID
-StrCpy (
-    char*       Destination,
-    const char* Source
-    )
-{
-    while (*Source) {
-        *Destination++ = *Source++;
-    }
-
-    *Destination = '\0';
-}
-
-/*++
-
-Routine Description:
-
-    Appends a null-terminated string to another.
-
-Arguments:
-
-    Destination - Destination buffer.
-    Source      - Source string.
-
-Return Value:
-
-    None.
-
---*/
-
-VOID
-StrCat (
-    char*       Destination,
-    const char* Source
-    )
-{
-    while (*Destination) {
-        Destination++;
-    }
-
-    while (*Source) {
-        *Destination++ = *Source++;
-    }
-
-    *Destination = '\0';
-}
-
-/*++
-
-Routine Description:
-
-    Compares two strings (case-sensitive).
-
-Arguments:
-
-    String1 - First string.
-    String2 - Second string.
-
-Return Value:
-
-    <0 if String1 < String2, 0 if equal, >0 if String1 > String2.
-
---*/
-
-int
-StrCmp (
-    const char* String1,
-    const char* String2
-    )
-{
-    while (*String1 && (*String1 == *String2)) {
-        String1++;
-        String2++;
-    }
-
-    return (int)(*(const unsigned char*)String1) -
-           (int)(*(const unsigned char*)String2);
-}
-
-/*++
-
-Routine Description:
-
-    Compares two strings up to a maximum length (case-sensitive).
-
-Arguments:
-
-    String1 - First string.
-    String2 - Second string.
-    Count   - Maximum characters to compare.
-
-Return Value:
-
-    0 if equal up to Count characters, non-zero otherwise.
-
---*/
-
-int
-StrNCmp (
-    const char* String1,
-    const char* String2,
-    int         Count
-    )
-{
-    while (Count--) {
-        if (*String1 != *String2++) {
-            return 1;
-        }
-
-        if (*String1++ == 0) {
-            break;
+void FillRect(int x, int y, int w, int h, uint8_t c) {
+    for (int yy = 0; yy < h; yy++) {
+        int py = y + yy;
+        if (py < 0 || py >= SCR_H) continue;
+        for (int xx = 0; xx < w; xx++) {
+            int px = x + xx;
+            if (px < 0 || px >= SCR_W) continue;
+            FB[py * SCR_W + px] = c;
         }
     }
-
-    return 0;
 }
 
-/*++
+/* ========== Tiny 8x8 Font (simple blocky) ========== */
 
-Routine Description:
+uint8_t Font8x8[128][8];
 
-    Converts an ASCII character to lowercase if it is uppercase.
-
-Arguments:
-
-    Character - Character to convert.
-
-Return Value:
-
-    Lowercase character.
-
---*/
-
-char
-ToLowerChar (
-    char Character
-    )
-{
-    if (Character >= 'A' && Character <= 'Z') {
-        return (char)(Character - 'A' + 'a');
-    }
-
-    return Character;
-}
-
-/*++
-
-Routine Description:
-
-    Compares two strings (case-insensitive).
-
-Arguments:
-
-    String1 - First string.
-    String2 - Second string.
-
-Return Value:
-
-    <0 if String1 < String2, 0 if equal, >0 if String1 > String2.
-
---*/
-
-int
-StrICmp (
-    const char* String1,
-    const char* String2
-    )
-{
-    while (*String1 && *String2) {
-        char C1;
-        char C2;
-
-        C1 = ToLowerChar(*String1);
-        C2 = ToLowerChar(*String2);
-
-        if (C1 != C2) {
-            return (int)((unsigned char)C1) - (int)((unsigned char)C2);
+void InitFont(void) {
+    for (int c = 0; c < 128; c++) {
+        for (int r = 0; r < 8; r++) {
+            Font8x8[c][r] = 0x3C; /* 00111100 */
         }
-
-        String1++;
-        String2++;
     }
-
-    return (int)((unsigned char)ToLowerChar(*String1)) -
-           (int)((unsigned char)ToLowerChar(*String2));
 }
 
-/*++
-
-Routine Description:
-
-    Compares two strings up to a maximum length (case-insensitive).
-
-Arguments:
-
-    String1 - First string.
-    String2 - Second string.
-    Count   - Maximum characters to compare.
-
-Return Value:
-
-    0 if equal up to Count characters, non-zero otherwise.
-
---*/
-
-int
-StrNICmp (
-    const char* String1,
-    const char* String2,
-    int         Count
-    )
-{
-    while (Count-- && *String1 && *String2) {
-        char C1;
-        char C2;
-
-        C1 = ToLowerChar(*String1);
-        C2 = ToLowerChar(*String2);
-
-        if (C1 != C2) {
-            return 1;
+void DrawChar(int x, int y, char ch, uint8_t color) {
+    if ((unsigned char)ch > 127) return;
+    uint8_t* g = Font8x8[(int)ch];
+    for (int r = 0; r < 8; r++) {
+        uint8_t line = g[r];
+        for (int c = 0; c < 8; c++) {
+            if (line & (1 << (7 - c))) {
+                PutPixel(x + c, y + r, color);
+            }
         }
-
-        String1++;
-        String2++;
-    }
-
-    return 0;
-}
-
-/*++
-
-Routine Description:
-
-    Tests whether a string ends with a given suffix (case-insensitive).
-
-Arguments:
-
-    String - String to test.
-    Suffix - Suffix to check.
-
-Return Value:
-
-    Non-zero if String ends with Suffix, zero otherwise.
-
---*/
-
-int
-EndsWith (
-    const char* String,
-    const char* Suffix
-    )
-{
-    int LengthString;
-    int LengthSuffix;
-
-    LengthString = StrLen(String);
-    LengthSuffix = StrLen(Suffix);
-
-    if (LengthSuffix > LengthString) {
-        return 0;
-    }
-
-    return (StrICmp(String + LengthString - LengthSuffix, Suffix) == 0);
-}
-
-/*++
-
-Routine Description:
-
-    Performs a busy-wait delay.
-
-Arguments:
-
-    Ticks - Approximate delay factor.
-
-Return Value:
-
-    None.
-
---*/
-
-VOID
-DelayTicks (
-    int Ticks
-    )
-{
-    volatile int Index;
-
-    for (Index = 0; Index < Ticks; Index++) {
     }
 }
 
-/*++
-
-Routine Description:
-
-    Performs an approximate delay in seconds.
-
-Arguments:
-
-    Seconds - Number of seconds to delay.
-
-Return Value:
-
-    None.
-
---*/
-
-VOID
-DelaySeconds (
-    int Seconds
-    )
-{
-    int Index;
-
-    for (Index = 0; Index < Seconds; Index++) {
-        DelayTicks(12000000);
+void DrawString(int x, int y, const char* s, uint8_t color) {
+    int cx = x;
+    while (*s) {
+        if (*s == '\n') {
+            y += 8;
+            cx = x;
+        } else {
+            DrawChar(cx, y, *s, color);
+            cx += 8;
+        }
+        s++;
     }
 }
 
-/*++
+/* ========== Desktop + Windows ========== */
 
-Routine Description:
+typedef struct {
+    int x, y, w, h;
+    int vx, vy;       /* velocity for Physics */
+    const char* title;
+    int visible;
+    int minimized;
+    int dragging;
+    int drag_off_x;
+    int drag_off_y;
+} WINDOW;
 
-    Prints a single character with an attribute at the current cursor position
-    and advances the cursor.
+WINDOW ShellWin  = { 10, 10, 300, 70, 0, 0, "Shell", 1, 0, 0, 0, 0 };
+WINDOW NotesWin  = { 10, 85, 300, 70, 0, 0, "Notes", 1, 0, 0, 0, 0 };
+WINDOW SnakeWin  = { 60, 40, 200, 120, 0, 0, "Snake", 0, 0, 0, 0, 0 };
 
-Arguments:
+void DrawDesktop(void) {
+    /* Retro Chaos: deep blue background, taskbar */
+    FillRect(0, 0, SCR_W, SCR_H, 0x01);
+    FillRect(0, SCR_H - 12, SCR_W, 12, 0x08);
+    DrawString(4, SCR_H - 10, "Everywhere OS", 0x0F);
+}
 
-    Character - Character to print.
-    Attribute - Attribute byte.
+/* Title bar: magenta, border teal, buttons yellow */
+void DrawWindowFrame(WINDOW* w) {
+    if (!w->visible || w->minimized) return;
 
-Return Value:
+    /* Border */
+    FillRect(w->x - 1, w->y - 1, w->w + 2, w->h + 2, 0x03);
+    /* Body */
+    FillRect(w->x, w->y, w->w, w->h, 0x00);
+    /* Title bar */
+    FillRect(w->x, w->y, w->w, 10, 0x0D);
+    DrawString(w->x + 3, w->y + 1, w->title, 0x0F);
 
-    None.
+    /* Close button [X] */
+    FillRect(w->x + w->w - 10, w->y + 1, 8, 8, 0x0E);
+    DrawChar(w->x + w->w - 9, w->y + 1, 'X', 0x00);
 
---*/
+    /* Minimize button [_] */
+    FillRect(w->x + w->w - 20, w->y + 1, 8, 8, 0x0E);
+    DrawChar(w->x + w->w - 19, w->y + 1, '_', 0x00);
+}
 
-VOID
-PrintChar (
-    char Character,
-    char Attribute
-    )
-{
-    if (Character == '\n') {
-        cursor_pos = (cursor_pos / 160 + 1) * 160;
+/* Simple hit test for title bar and buttons */
+int PointInRect(int x, int y, int rx, int ry, int rw, int rh) {
+    return (x >= rx && x < rx + rw && y >= ry && y < ry + rh);
+}
+
+/* ========== Mouse ========== */
+
+int mouse_x = SCR_W / 2;
+int mouse_y = SCR_H / 2;
+int mouse_buttons = 0;
+int mouse_prev_buttons = 0;
+
+void MouseWait(uint8_t type) {
+    uint32_t timeout = 100000;
+    if (type == 0) {
+        while (timeout--) {
+            if (inb(0x64) & 1) return;
+        }
     } else {
-        VIDEO_BUF[cursor_pos++] = Character;
-        VIDEO_BUF[cursor_pos++] = Attribute;
-    }
-
-    UpdateCursor();
-}
-
-/*++
-
-Routine Description:
-
-    Prints a null-terminated string using the default attribute.
-
-Arguments:
-
-    String - String to print.
-
-Return Value:
-
-    None.
-
---*/
-
-VOID
-Print (
-    const char* String
-    )
-{
-    int Index;
-
-    for (Index = 0; String[Index]; Index++) {
-        PrintChar(String[Index], 0x07);
+        while (timeout--) {
+            if (!(inb(0x64) & 2)) return;
+        }
     }
 }
 
-/*++
+void MouseWrite(uint8_t data) {
+    MouseWait(1);
+    outb(0x64, 0xD4);
+    MouseWait(1);
+    outb(0x60, data);
+}
 
-Routine Description:
+uint8_t MouseRead(void) {
+    MouseWait(0);
+    return inb(0x60);
+}
 
-    Prints a decimal integer.
+void InitMouse(void) {
+    uint8_t status;
 
-Arguments:
+    outb(0x64, 0xA8);
+    MouseWait(1);
+    outb(0x64, 0x20);
+    MouseWait(0);
+    status = inb(0x60) | 2;
+    MouseWait(1);
+    outb(0x64, 0x60);
+    MouseWait(1);
+    outb(0x60, status);
 
-    Number - Integer to print.
+    MouseWrite(0xF6);
+    MouseRead();
+    MouseWrite(0xF4);
+    MouseRead();
+}
 
-Return Value:
+void UpdateMouse(void) {
+    if (!(inb(0x64) & 1)) return;
 
-    None.
+    static uint8_t packet[3];
+    static int idx = 0;
 
---*/
+    packet[idx++] = inb(0x60);
+    if (idx < 3) return;
+    idx = 0;
 
-VOID
-PrintInt (
-    int Number
-    )
-{
-    char Buffer[10];
-    int  Index;
+    int dx = (int8_t)packet[1];
+    int dy = (int8_t)packet[2];
 
-    if (Number == 0) {
-        PrintChar('0', 0x07);
-        return;
-    }
+    mouse_prev_buttons = mouse_buttons;
+    mouse_buttons = packet[0] & 0x07;
 
-    if (Number < 0) {
-        PrintChar('-', 0x07);
-        Number = -Number;
-    }
+    mouse_x += dx;
+    mouse_y -= dy;
 
-    Index = 0;
-    while (Number > 0) {
-        Buffer[Index++] = (char)((Number % 10) + '0');
-        Number /= 10;
-    }
+    if (mouse_x < 0) mouse_x = 0;
+    if (mouse_x >= SCR_W) mouse_x = SCR_W - 1;
+    if (mouse_y < 0) mouse_y = 0;
+    if (mouse_y >= SCR_H) mouse_y = SCR_H - 1;
+}
 
-    while (--Index >= 0) {
-        PrintChar(Buffer[Index], 0x07);
+void DrawMouseCursor(void) {
+    /* Bright red triangle */
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j <= i; j++) {
+            PutPixel(mouse_x + j, mouse_y + i, 0x04);
+        }
     }
 }
 
-/*++
+/* ========== Keyboard ========== */
 
-Routine Description:
+int shift_pressed = 0;
 
-    Clears the text-mode screen and resets the cursor.
+char GetKeyChar(void) {
+    if (!(inb(0x64) & 1)) return 0;
 
-Arguments:
+    uint8_t sc = inb(0x60);
 
-    None.
+    if (sc == 0x2A || sc == 0x36) { shift_pressed = 1; return 0; }
+    if (sc == 0xAA || sc == 0xB6) { shift_pressed = 0; return 0; }
 
-Return Value:
+    if (sc & 0x80) return 0;
 
-    None.
+    if (sc == 0x1C) return '\n';
+    if (sc == 0x0E) return 0x08;
+    if (sc == 0x01) return 27;
 
---*/
-
-VOID
-ClearScreen (
-    VOID
-    )
-{
-    int Index;
-
-    for (Index = 0; Index < 4000; Index += 2) {
-        VIDEO_BUF[Index]   = ' ';
-        VIDEO_BUF[Index+1] = 0x07;
-    }
-
-    cursor_pos = 0;
-    UpdateCursor();
-}
-
-/*++
-
-Routine Description:
-
-    Reads a character from the keyboard, handling shift and basic control keys.
-
-Arguments:
-
-    None.
-
-Return Value:
-
-    ASCII character, '\n' for Enter, 0x08 for Backspace, 27 for ESC.
-
---*/
-
-char
-GetChar (
-    VOID
-    )
-{
-    char Lower[] = {
+    static char Lower[] = {
         0,0,'1','2','3','4','5','6','7','8','9','0','-','=',0,0,
         'q','w','e','r','t','y','u','i','o','p','[',']',0,0,
         'a','s','d','f','g','h','j','k','l',';','\'','`',0,'\\',
         'z','x','c','v','b','n','m',',','.','/',0,'*',0,' '
     };
 
-    char Upper[] = {
+    static char Upper[] = {
         0,0,'!','@','#','$','%','^','&','*','(',')','_','+',0,0,
         'Q','W','E','R','T','Y','U','I','O','P','{','}',0,0,
         'A','S','D','F','G','H','J','K','L',':','\"','~',0,'|',
         'Z','X','C','V','B','N','M','<','>','?',0,'*',0,' '
     };
 
-    for (;;) {
-        if (inb(0x64) & 0x01) {
-            uint8_t ScanCode;
+    if (sc < sizeof(Lower)) {
+        return shift_pressed ? Upper[sc] : Lower[sc];
+    }
 
-            ScanCode = inb(0x60);
+    return 0;
+}
 
-            if (ScanCode == 0x2A || ScanCode == 0x36) {
-                shift_pressed = 1;
-                continue;
-            }
+/* ========== Shell ========== */
 
-            if (ScanCode == 0xAA || ScanCode == 0xB6) {
-                shift_pressed = 0;
-                continue;
-            }
+char shell_input[64];
+int  shell_len = 0;
 
-            if (ScanCode & 0x80) {
-                continue;
-            }
+void ShellClear(void) {
+    FillRect(ShellWin.x + 2, ShellWin.y + 12, ShellWin.w - 4, ShellWin.h - 14, 0x00);
+}
 
-            if (ScanCode == 0x0E) {
-                return 0x08;
-            }
+void ShellDraw(void) {
+    if (!ShellWin.visible || ShellWin.minimized) return;
+    DrawString(ShellWin.x + 4, ShellWin.y + 14, shell_input, 0x0F);
+}
 
-            if (ScanCode == 0x1C) {
-                return '\n';
-            }
+int StrEq(const char* a, const char* b) {
+    while (*a && *b && *a == *b) { a++; b++; }
+    return (*a == 0 && *b == 0);
+}
 
-            if (ScanCode == 0x01) {
-                return 27;
-            }
+void ShellExec(void) {
+    if (shell_len == 0) return;
 
-            return shift_pressed ? Upper[ScanCode] : Lower[ScanCode];
-        }
+    if (StrEq(shell_input, "clear")) {
+        ShellClear();
+    } else if (StrEq(shell_input, "credits")) {
+        DrawString(ShellWin.x + 4, ShellWin.y + 24,
+                   "Clay Sanders, Noah Juopperi\n", 0x0F);
+    } else if (StrEq(shell_input, "snake")) {
+        SnakeWin.visible = 1;
+        SnakeWin.minimized = 0;
+    } else if (StrEq(shell_input, "notes")) {
+        NotesWin.visible = 1;
+        NotesWin.minimized = 0;
+    }
+
+    shell_len = 0;
+    shell_input[0] = 0;
+}
+
+/* ========== Notes ========== */
+
+char notes_buf[256];
+int  notes_len = 0;
+
+void NotesDraw(void) {
+    if (!NotesWin.visible || NotesWin.minimized) return;
+    DrawString(NotesWin.x + 4, NotesWin.y + 14, notes_buf, 0x0F);
+}
+
+/* ========== Snake ========== */
+
+#define SNAKE_MAX 100
+int snake_x[SNAKE_MAX];
+int snake_y[SNAKE_MAX];
+int snake_len = 5;
+int snake_dx = 1;
+int snake_dy = 0;
+int food_x = 20;
+int food_y = 10;
+
+void SnakeInit(void) {
+    for (int i = 0; i < snake_len; i++) {
+        snake_x[i] = 10 - i;
+        snake_y[i] = 10;
     }
 }
 
-/*++
+void SnakeStep(void) {
+    if (!SnakeWin.visible || SnakeWin.minimized) return;
 
-Routine Description:
+    for (int i = snake_len - 1; i > 0; i--) {
+        snake_x[i] = snake_x[i - 1];
+        snake_y[i] = snake_y[i - 1];
+    }
+    snake_x[0] += snake_dx;
+    snake_y[0] += snake_dy;
 
-    Reads a line of input from the keyboard, echoing characters and handling
-    backspace. ESC is ignored here (used in note editor instead).
+    if (snake_x[0] < 0) snake_x[0] = 0;
+    if (snake_y[0] < 0) snake_y[0] = 0;
+    if (snake_x[0] > SnakeWin.w - 10) snake_x[0] = SnakeWin.w - 10;
+    if (snake_y[0] > SnakeWin.h - 20) snake_y[0] = SnakeWin.h - 20;
 
-Arguments:
-
-    Buffer - Buffer to receive null-terminated input string.
-
-Return Value:
-
-    None.
-
---*/
-
-VOID
-GetInput (
-    char* Buffer
-    )
-{
-    int Index;
-
-    Index = 0;
-
-    for (;;) {
-        char Character;
-
-        Character = GetChar();
-
-        if (Character == '\n') {
-            Buffer[Index] = '\0';
-            PrintChar('\n', 0x07);
-            break;
-        } else if (Character == 0x08 && Index > 0) {
-            Index--;
-            cursor_pos -= 2;
-            VIDEO_BUF[cursor_pos] = ' ';
-            UpdateCursor();
-        } else if (Character != 0x08 && Character != 27) {
-            Buffer[Index++] = Character;
-            PrintChar(Character, 0x07);
-        }
+    if (snake_x[0] == food_x && snake_y[0] == food_y) {
+        if (snake_len < SNAKE_MAX) snake_len++;
+        food_x = (food_x * 7 + 13) % (SnakeWin.w - 10);
+        food_y = (food_y * 5 + 11) % (SnakeWin.h - 20);
     }
 }
 
-/*++
+void SnakeDraw(void) {
+    if (!SnakeWin.visible || SnakeWin.minimized) return;
 
-Routine Description:
+    FillRect(SnakeWin.x + 2, SnakeWin.y + 12, SnakeWin.w - 4, SnakeWin.h - 14, 0x00);
 
-    Ensures that a filename ends with ".note".
+    for (int i = 0; i < snake_len; i++) {
+        PutPixel(SnakeWin.x + 5 + snake_x[i],
+                 SnakeWin.y + 15 + snake_y[i], 0x0A);
+    }
 
-Arguments:
+    PutPixel(SnakeWin.x + 5 + food_x,
+             SnakeWin.y + 15 + food_y, 0x04);
+}
 
-    Name - Filename buffer.
+/* ========== Window Drag + Clay Physics ========== */
 
-Return Value:
+void UpdateWindowPhysics(WINDOW* w) {
+    if (!w->visible || w->minimized) return;
 
-    None.
+    w->x += w->vx;
+    w->y += w->vy;
 
---*/
+    /* friction */
+    w->vx = (w->vx * 9) / 10;
+    w->vy = (w->vy * 9) / 10;
 
-VOID
-EnsureNoteExtension (
-    char* Name
-    )
-{
-    if (!EndsWith(Name, ".note")) {
-        StrCat(Name, ".note");
+    /* bounce on edges */
+    if (w->x < 0) { w->x = 0; w->vx = -w->vx / 2; }
+    if (w->y < 0) { w->y = 0; w->vy = -w->vy / 2; }
+    if (w->x + w->w > SCR_W) { w->x = SCR_W - w->w; w->vx = -w->vx / 2; }
+    if (w->y + w->h > SCR_H - 12) { w->y = SCR_H - 12 - w->h; w->vy = -w->vy / 2; }
+}
+
+void HandleWindowMouse(WINDOW* w) {
+    if (!w->visible) return;
+
+    int left_down  = mouse_buttons & 1;
+    int left_prev  = mouse_prev_buttons & 1;
+
+    /* Click on title bar to drag */
+    if (!w->dragging && left_down && !left_prev &&
+        PointInRect(mouse_x, mouse_y, w->x, w->y, w->w, 10)) {
+        w->dragging = 1;
+        w->drag_off_x = mouse_x - w->x;
+        w->drag_off_y = mouse_y - w->y;
+        w->vx = 0;
+        w->vy = 0;
+    }
+
+    if (w->dragging && left_down) {
+        int new_x = mouse_x - w->drag_off_x;
+        int new_y = mouse_y - w->drag_off_y;
+        w->vx = new_x - w->x;
+        w->vy = new_y - w->y;
+        w->x = new_x;
+        w->y = new_y;
+    }
+
+    if (w->dragging && !left_down && left_prev) {
+        w->dragging = 0;
+    }
+
+    /* Close button */
+    if (left_down && !left_prev &&
+        PointInRect(mouse_x, mouse_y, w->x + w->w - 10, w->y + 1, 8, 8)) {
+        w->visible = 0;
+    }
+
+    /* Minimize button */
+    if (left_down && !left_prev &&
+        PointInRect(mouse_x, mouse_y, w->x + w->w - 20, w->y + 1, 8, 8)) {
+        w->minimized = 1;
     }
 }
 
-/*++
+/* ========== Taskbar (simple) ========== */
 
-Routine Description:
+void DrawTaskbar(void) {
+    FillRect(0, SCR_H - 12, SCR_W, 12, 0x08);
+    DrawString(4, SCR_H - 10, "Everywhere OS", 0x0F);
 
-    Finds a file by name in the in-memory file system.
-
-Arguments:
-
-    Name - Filename.
-
-Return Value:
-
-    Index of file or -1 if not found.
-
---*/
-
-int
-FindFileIndex (
-    const char* Name
-    )
-{
-    int Index;
-
-    for (Index = 0; Index < file_count; Index++) {
-        if (file_system[Index].active &&
-            StrICmp(file_system[Index].name, Name) == 0) {
-            return Index;
-        }
+    int x = 120;
+    if (ShellWin.visible && ShellWin.minimized) {
+        FillRect(x, SCR_H - 11, 40, 10, 0x03);
+        DrawString(x + 2, SCR_H - 10, "Shell", 0x0F);
+        x += 44;
     }
-
-    return -1;
-}
-
-/*++
-
-Routine Description:
-
-    Implements a simple snake game. Displays score, moves the snake, updates
-    high score, and reboots on exit.
-
-Arguments:
-
-    None.
-
-Return Value:
-
-    None.
-
---*/
-
-VOID
-SnakeGame (
-    VOID
-    )
-{
-    int SnakeX[MAX_SNAKE];
-    int SnakeY[MAX_SNAKE];
-    int Length;
-    int FoodX;
-    int FoodY;
-    int DeltaX;
-    int DeltaY;
-    int Score;
-    int Index;
-
-    Length = 1;
-    FoodX  = 20;
-    FoodY  = 10;
-    DeltaX = 1;
-    DeltaY = 0;
-    Score  = 0;
-
-    SnakeX[0] = 40;
-    SnakeY[0] = 12;
-
-    ClearScreen();
-
-    for (;;) {
-        int OldCursor;
-
-        OldCursor = cursor_pos;
-        cursor_pos = 0;
-
-        Print("Score: ");
-        PrintInt(Score);
-        Print(" | High Score: ");
-        PrintInt(high_score);
-        Print(" | WASD to Move, Q to Quit");
-
-        cursor_pos = OldCursor;
-        UpdateCursor();
-
-        VIDEO_BUF[(FoodY * 80 + FoodX) * 2]     = '@';
-        VIDEO_BUF[(FoodY * 80 + FoodX) * 2 + 1] = 0x04;
-
-        for (Index = 0; Index < Length; Index++) {
-            VIDEO_BUF[(SnakeY[Index] * 80 + SnakeX[Index]) * 2]     =
-                (Index == 0) ? 'O' : '*';
-            VIDEO_BUF[(SnakeY[Index] * 80 + SnakeX[Index]) * 2 + 1] = 0x02;
-        }
-
-        DelayTicks(6000000);
-
-        if (inb(0x64) & 0x01) {
-            unsigned char ScanCode;
-
-            ScanCode = inb(0x60);
-
-            if (ScanCode == 0x11 && DeltaY != 1) {
-                DeltaX = 0;
-                DeltaY = -1;
-            }
-
-            if (ScanCode == 0x1E && DeltaX != 1) {
-                DeltaX = -1;
-                DeltaY = 0;
-            }
-
-            if (ScanCode == 0x1F && DeltaY != -1) {
-                DeltaX = 0;
-                DeltaY = 1;
-            }
-
-            if (ScanCode == 0x20 && DeltaX != -1) {
-                DeltaX = 1;
-                DeltaY = 0;
-            }
-
-            if (ScanCode == 0x10) {
-                break;
-            }
-        }
-
-        VIDEO_BUF[(SnakeY[Length-1] * 80 + SnakeX[Length-1]) * 2] = ' ';
-
-        for (Index = Length - 1; Index > 0; Index--) {
-            SnakeX[Index] = SnakeX[Index-1];
-            SnakeY[Index] = SnakeY[Index-1];
-        }
-
-        SnakeX[0] += DeltaX;
-        SnakeY[0] += DeltaY;
-
-        if (SnakeX[0] < 0 || SnakeX[0] >= 80 ||
-            SnakeY[0] < 1 || SnakeY[0] >= 25) {
-            break;
-        }
-
-        if (SnakeX[0] == FoodX && SnakeY[0] == FoodY) {
-            Score++;
-            if (Length < MAX_SNAKE) {
-                Length++;
-            }
-
-            if (Score > high_score) {
-                high_score = Score;
-            }
-
-            FoodX = (FoodX * 3 + 7) % 70 + 5;
-            FoodY = (FoodY * 7 + 3) % 20 + 2;
-        }
+    if (NotesWin.visible && NotesWin.minimized) {
+        FillRect(x, SCR_H - 11, 40, 10, 0x03);
+        DrawString(x + 2, SCR_H - 10, "Notes", 0x0F);
+        x += 44;
     }
-
-    ClearScreen();
-    Print("Game Over!\n");
-    Print("Score: ");
-    PrintInt(Score);
-    Print("\nHigh Score: ");
-    PrintInt(high_score);
-    Print("\nPress any key to reboot...");
-    (void)GetChar();
-    RebootSystem();
-}
-
-/*++
-
-Routine Description:
-
-    Prints help information for the BOX scripting language.
-
-Arguments:
-
-    None.
-
-Return Value:
-
-    None.
-
---*/
-
-VOID
-PrintBoxHelp (
-    VOID
-    )
-{
-    Print("BOX Language Help:\n");
-    Print("  - Create a note script with: new note\n");
-    Print("  - Give it a name; .note will be added if missing.\n");
-    Print("  - Each line in the note is a command, same as typing it at the prompt.\n");
-    Print("  - Example lines:\n");
-    Print("      clear\n");
-    Print("      show Hello from BOX!\n");
-    Print("      delay 1\n");
-    Print("      show This appears 1 second later.\n");
-    Print("  - Use: box <filename.note> to run the script.\n");
-    Print("  - 'delay N' waits N seconds before continuing.\n");
-}
-
-/*++
-
-Routine Description:
-
-    Processes a single command line, including shell commands, note management,
-    the snake game, and BOX script execution.
-
-Arguments:
-
-    Command - Command line string.
-
-Return Value:
-
-    None.
-
---*/
-
-VOID
-ProcessCommand (
-    char* Command
-    )
-{
-    char CommandLower[128];
-    int  Index;
-
-    for (Index = 0;
-         Command[Index] && Index < (int)(sizeof(CommandLower) - 1);
-         Index++) {
-        CommandLower[Index] = ToLowerChar(Command[Index]);
-    }
-
-    CommandLower[Index] = '\0';
-
-    if (StrICmp(CommandLower, "clear") == 0) {
-        ClearScreen();
-        return;
-    }
-
-    if (StrNICmp(CommandLower, "show ", 5) == 0) {
-        Print(Command + 5);
-        Print("\n");
-        return;
-    }
-
-    if (StrICmp(CommandLower, "snake") == 0) {
-        Print("Press Enter to start Snake...\n");
-        for (;;) {
-            char C;
-
-            C = GetChar();
-            if (C == '\n') {
-                break;
-            }
-        }
-
-        SnakeGame();
-        return;
-    }
-
-    if (StrICmp(CommandLower, "new note") == 0) {
-        if (file_count >= MAX_FILES) {
-            Print("Storage Full!\n");
-            return;
-        }
-
-        Print("Filename: ");
-
-        {
-            char Name[MAX_FILENAME];
-            int  J;
-
-            for (J = 0; J < MAX_FILENAME; J++) {
-                Name[J] = 0;
-            }
-
-            GetInput(Name);
-            EnsureNoteExtension(Name);
-
-            Print("note (ESC to cancel, ` to save):\n");
-
-            {
-                int  FileIndex;
-                int  ContentIndex;
-                char Character;
-
-                FileIndex    = file_count;
-                ContentIndex = 0;
-
-                for (;;) {
-                    Character = GetChar();
-
-                    if (Character == 27) {
-                        Print("\nCanceled.\n");
-                        return;
-                    }
-
-                    if (Character == '`') {
-                        break;
-                    }
-
-                    if (Character == 0x08 && ContentIndex > 0) {
-                        ContentIndex--;
-                        cursor_pos -= 2;
-                        VIDEO_BUF[cursor_pos] = ' ';
-                        UpdateCursor();
-                        continue;
-                    }
-
-                    if (Character == '\n') {
-                        if (ContentIndex < MAX_CONTENT - 1) {
-                            file_system[FileIndex].content[ContentIndex++] =
-                                Character;
-                            PrintChar(Character, 0x02);
-                        }
-                        continue;
-                    }
-
-                    if (Character != 0x08 &&
-                        ContentIndex < MAX_CONTENT - 1) {
-                        file_system[FileIndex].content[ContentIndex++] =
-                            Character;
-                        PrintChar(Character, 0x02);
-                    }
-                }
-
-                file_system[FileIndex].content[ContentIndex] = '\0';
-
-                for (ContentIndex = 0;
-                     ContentIndex < MAX_FILENAME;
-                     ContentIndex++) {
-                    file_system[FileIndex].name[ContentIndex] = 0;
-                }
-
-                for (ContentIndex = 0;
-                     Name[ContentIndex] &&
-                     ContentIndex < MAX_FILENAME - 1;
-                     ContentIndex++) {
-                    file_system[FileIndex].name[ContentIndex] =
-                        Name[ContentIndex];
-                }
-
-                file_system[FileIndex].active = 1;
-                file_count++;
-
-                Print("\nSaved!\n");
-            }
-        }
-
-        return;
-    }
-
-    if (StrNICmp(CommandLower, "delete ", 7) == 0) {
-        char FileName[MAX_FILENAME];
-        int  J;
-        const char* Source;
-
-        J      = 0;
-        Source = Command + 7;
-
-        while (*Source && J < MAX_FILENAME - 1) {
-            FileName[J++] = *Source++;
-        }
-
-        FileName[J] = '\0';
-
-        EnsureNoteExtension(FileName);
-
-        {
-            int FileIndex;
-
-            FileIndex = FindFileIndex(FileName);
-
-            if (FileIndex < 0) {
-                Print("File not found.\n");
-            } else {
-                file_system[FileIndex].active = 0;
-                Print("Deleted ");
-                Print(FileName);
-                Print("\n");
-            }
-        }
-
-        return;
-    }
-
-    if (StrICmp(CommandLower, "box help") == 0) {
-        PrintBoxHelp();
-        return;
-    }
-
-    if (StrNICmp(CommandLower, "box ", 4) == 0) {
-        char FileName[MAX_FILENAME];
-        int  J;
-        const char* Source;
-
-        J      = 0;
-        Source = Command + 4;
-
-        while (*Source && J < MAX_FILENAME - 1) {
-            FileName[J++] = *Source++;
-        }
-
-        FileName[J] = '\0';
-
-        EnsureNoteExtension(FileName);
-
-        {
-            int FileIndex;
-
-            FileIndex = FindFileIndex(FileName);
-
-            if (FileIndex < 0) {
-                Print("File not found.\n");
-                return;
-            }
-
-            {
-                char LineBuffer[64];
-                int  LineIndex;
-                int  ContentIndex;
-
-                LineIndex = 0;
-
-                for (ContentIndex = 0;
-                     file_system[FileIndex].content[ContentIndex] != '\0';
-                     ContentIndex++) {
-
-                    char Character;
-
-                    Character = file_system[FileIndex].content[ContentIndex];
-
-                    if (Character == '\n') {
-                        LineBuffer[LineIndex] = '\0';
-
-                        if (LineIndex > 0) {
-                            char LineLower[64];
-                            int  T;
-
-                            for (T = 0;
-                                 T < LineIndex &&
-                                 T < (int)sizeof(LineLower) - 1;
-                                 T++) {
-                                LineLower[T] =
-                                    ToLowerChar(LineBuffer[T]);
-                            }
-
-                            LineLower[T] = '\0';
-
-                            if (StrNICmp(LineLower, "delay ", 6) == 0) {
-                                int Seconds;
-                                int P;
-
-                                Seconds = 0;
-                                P       = 6;
-
-                                while (LineBuffer[P] >= '0' &&
-                                       LineBuffer[P] <= '9') {
-                                    Seconds = Seconds * 10 +
-                                              (LineBuffer[P] - '0');
-                                    P++;
-                                }
-
-                                if (Seconds > 0) {
-                                    DelaySeconds(Seconds);
-                                }
-                            } else {
-                                ProcessCommand(LineBuffer);
-                            }
-                        }
-
-                        LineIndex = 0;
-                    } else {
-                        if (LineIndex <
-                            (int)sizeof(LineBuffer) - 1) {
-                            LineBuffer[LineIndex++] = Character;
-                        }
-                    }
-                }
-
-                if (LineIndex > 0) {
-                    char LineLower[64];
-                    int  T;
-
-                    LineBuffer[LineIndex] = '\0';
-
-                    for (T = 0;
-                         T < LineIndex &&
-                         T < (int)sizeof(LineLower) - 1;
-                         T++) {
-                        LineLower[T] = ToLowerChar(LineBuffer[T]);
-                    }
-
-                    LineLower[T] = '\0';
-
-                    if (StrNICmp(LineLower, "delay ", 6) == 0) {
-                        int Seconds;
-                        int P;
-
-                        Seconds = 0;
-                        P       = 6;
-
-                        while (LineBuffer[P] >= '0' &&
-                               LineBuffer[P] <= '9') {
-                            Seconds = Seconds * 10 +
-                                      (LineBuffer[P] - '0');
-                            P++;
-                        }
-
-                        if (Seconds > 0) {
-                            DelaySeconds(Seconds);
-                        }
-                    } else {
-                        ProcessCommand(LineBuffer);
-                    }
-                }
-            }
-        }
-
-        return;
-    }
-
-    if (StrICmp(CommandLower, "setup") == 0) {
-        int J;
-
-        Print("Enter your name: ");
-
-        for (J = 0; J < (int)sizeof(user_name); J++) {
-            user_name[J] = 0;
-        }
-
-        GetInput(user_name);
-        Print("Name set.\n");
-        return;
-    }
-
-    if (StrICmp(CommandLower, "what to do") == 0) {
-        Print("Commands:\n");
-        Print("  clear         - Clear the screen.\n");
-        Print("  show <text>   - Print text.\n");
-        Print("  new note      - Create a new .note file.\n");
-        Print("  delete <name> - Delete a .note file.\n");
-        Print("  box <name>    - Run a BOX script from a .note file.\n");
-        Print("  box help      - Show BOX scripting help.\n");
-        Print("  snake         - Play the snake game.\n");
-        Print("  setup         - Set your user name.\n");
-        Print("  what to do    - Show this command list.\n");
-        Print("  credits       - Show credits.\n");
-        return;
-    }
-
-    if (StrICmp(CommandLower, "credits") == 0) {
-        Print("Main Developer Clay Sanders, Co Developer Noah Juopperi\n");
-        return;
-    }
-
-    if (Command[0] != '\0') {
-        Print("Unknown command.\n");
+    if (SnakeWin.visible && SnakeWin.minimized) {
+        FillRect(x, SCR_H - 11, 40, 10, 0x03);
+        DrawString(x + 2, SCR_H - 10, "Snake", 0x0F);
+        x += 44;
     }
 }
 
-/*++
+/* ========== Boot Screen ========== */
 
-Routine Description:
+void DrawBootScreen(void) {
+    FillRect(0, 0, SCR_W, SCR_H, 0x00);
+    DrawString(10, 80,
+        "Why Go Anywhere When You Are Everywhere?\nEverywhere OS",
+        0x0F);
+}
 
-    Main entry point for the OS shell.
+/* ========== Main ========== */
 
-Arguments:
+void kernelMain(void) {
+    SetMode13h();
+    InitFont();
+    InitMouse();
+    SnakeInit();
 
-    None.
+    DrawBootScreen();
+    for (volatile int d = 0; d < 2000000; d++) { __asm__ __volatile__("nop"); }
 
-Return Value:
+    while (1) {
+        char ch = GetKeyChar();
+        if (ch == 27) {
+            RebootSystem();
+        }
 
-    None.
+        /* Shell input */
+        if (ch) {
+            if (ch == '\n') {
+                ShellExec();
+            } else if (ch == 0x08) {
+                if (shell_len > 0) shell_input[--shell_len] = 0;
+            } else if (shell_len < (int)sizeof(shell_input) - 1) {
+                shell_input[shell_len++] = ch;
+                shell_input[shell_len] = 0;
+            }
+        }
 
---*/
+        UpdateMouse();
+        SnakeStep();
 
-VOID
-kernelMain (
-    VOID
-    )
-{
-    char Buffer[128];
+        HandleWindowMouse(&ShellWin);
+        HandleWindowMouse(&NotesWin);
+        HandleWindowMouse(&SnakeWin);
 
-    ClearScreen();
-    Print(OS_NAME " v" OS_VERSION_STRING "\n");
+        UpdateWindowPhysics(&ShellWin);
+        UpdateWindowPhysics(&NotesWin);
+        UpdateWindowPhysics(&SnakeWin);
 
-    for (;;) {
-        Print(user_name);
-        Print(": ");
-        GetInput(Buffer);
-        ProcessCommand(Buffer);
+        DrawDesktop();
+        DrawWindowFrame(&ShellWin);
+        DrawWindowFrame(&NotesWin);
+        DrawWindowFrame(&SnakeWin);
+
+        ShellDraw();
+        NotesDraw();
+        SnakeDraw();
+
+        DrawTaskbar();
+        DrawMouseCursor();
+
+        for (volatile int d = 0; d < 30000; d++) { __asm__ __volatile__("nop"); }
     }
 }
