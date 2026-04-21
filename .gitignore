@@ -12,6 +12,7 @@ build/
 *.dll
 *.iso
 *.o
+*.pdb
 
 # privacy
 *.env
