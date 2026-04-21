@@ -51,3 +51,7 @@ Features
 00034 No way to open the file browser from the shell - added files command that opens the Files window
 (explorer)
 00035 No file browser window existed - added Files window (shell/explorer/files.c) showing EVRYFS directory listing with filename and size per row; accessible via files shell command or taskbar
+
+Features
+(explorer)
+00036 Double-clicking a .txt file in the Files window now loads its contents into the Notes window and brings Notes to the foreground; ke_tick counter added for double-click timing

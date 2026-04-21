@@ -88,7 +88,8 @@ void DrawWindowFrame(WINDOW* w);
 void UpdateWindowPhysics(WINDOW* w);
 void HandleWindowMouse(WINDOW* w, int win_id);
 
-extern int active_window;
+extern int      active_window;
+extern uint32_t ke_tick;
 
 /* ********** Mouse ********** */
 

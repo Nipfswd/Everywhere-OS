@@ -72,6 +72,7 @@ void kernelMain(uint32_t* mbi) {
         HandleWindowMouse(&NotesWin, 1);
         HandleWindowMouse(&SnakeWin, 2);
         HandleWindowMouse(&FilesWin, 3);
+        FilesHandleMouse();
         HandleTaskbarClick();
 
         UpdateWindowPhysics(&ShellWin);
@@ -94,6 +95,7 @@ void kernelMain(uint32_t* mbi) {
         DrawMouseCursor();
         FlipBuffers();
 
+        ke_tick++;
         for (volatile int d = 0; d < 30000; d++) { __asm__ __volatile__("nop"); }
     }
 }

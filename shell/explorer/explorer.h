@@ -70,6 +70,7 @@ void NotesDraw(void);
 /* ********** Files ********** */
 
 void FilesDraw(void);
+void FilesHandleMouse(void);
 
 /* ********** Snake ********** */
 
