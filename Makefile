@@ -95,7 +95,7 @@ $(DISK_IMG):
 	qemu-img create -f raw $@ 1M
 
 run: $(OS_ISO) $(DISK_IMG)
-	qemu-system-i386 -cdrom $(OS_ISO) -hda $(DISK_IMG) -full-screen
+	qemu-system-i386 -cdrom $(OS_ISO) -hda $(DISK_IMG) -display gtk,zoom-to-fit=off
 
 clean:
 	rm -rf $(BUILD) $(ISO)

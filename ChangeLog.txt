@@ -30,6 +30,7 @@ Fixes
 00026 Window dragging is jerky and lags behind mouse - disabled physics updates during drag so window follows cursor directly
 (taskbar)
 00027 Taskbar only shows minimized windows, looks incomplete - redesigned to show ALL visible windows as clickable buttons with active window highlighting and minimized state indicator [bracket]
+00031 QEMU -full-screen scales 640x480 framebuffer to host resolution, cropping the bottom taskbar - replaced with -display gtk,zoom-to-fit=off to show framebuffer at native size without scaling
 
 Features
 (taskbar)
