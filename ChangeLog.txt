@@ -28,6 +28,12 @@ Fixes
 Fixes
 (window)
 00026 Window dragging is jerky and lags behind mouse - disabled physics updates during drag so window follows cursor directly
+(taskbar)
+00027 Taskbar only shows minimized windows, looks incomplete - redesigned to show ALL visible windows as clickable buttons with active window highlighting and minimized state indicator [bracket]
+
+Features
+(taskbar)
+00028 Taskbar now shows all four windows as distinct buttons - click to toggle minimize/restore, highlighted when active
 
 Features
 (window)

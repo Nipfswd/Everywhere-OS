@@ -45,38 +45,46 @@ void HandleTaskbarClick(void) {
     if (!(left_down && !left_prev)) return;
     if (!PointInRect(mouse_x, mouse_y, 0, SCR_H - 12, SCR_W, 12)) return;
 
-    int x = 120;
-    if (ShellWin.visible && ShellWin.minimized) {
-        if (PointInRect(mouse_x, mouse_y, x, SCR_H - 11, 40, 10)) {
+    int x = 105;
+    int btn_w = 70;
+
+    if (ShellWin.visible && PointInRect(mouse_x, mouse_y, x, SCR_H - 11, btn_w, 10)) {
+        if (ShellWin.minimized)
             ShellWin.minimized = 0;
-            active_window = 0;
-            return;
-        }
-        x += 44;
+        else
+            ShellWin.minimized = 1;
+        active_window = 0;
+        return;
     }
-    if (NotesWin.visible && NotesWin.minimized) {
-        if (PointInRect(mouse_x, mouse_y, x, SCR_H - 11, 40, 10)) {
+    x += btn_w + 2;
+
+    if (NotesWin.visible && PointInRect(mouse_x, mouse_y, x, SCR_H - 11, btn_w, 10)) {
+        if (NotesWin.minimized)
             NotesWin.minimized = 0;
-            active_window = 1;
-            return;
-        }
-        x += 44;
+        else
+            NotesWin.minimized = 1;
+        active_window = 1;
+        return;
     }
-    if (SnakeWin.visible && SnakeWin.minimized) {
-        if (PointInRect(mouse_x, mouse_y, x, SCR_H - 11, 40, 10)) {
+    x += btn_w + 2;
+
+    if (SnakeWin.visible && PointInRect(mouse_x, mouse_y, x, SCR_H - 11, btn_w, 10)) {
+        if (SnakeWin.minimized)
             SnakeWin.minimized = 0;
-            active_window = 2;
-            return;
-        }
-        x += 44;
+        else
+            SnakeWin.minimized = 1;
+        active_window = 2;
+        return;
     }
-    if (FilesWin.visible && FilesWin.minimized) {
-        if (PointInRect(mouse_x, mouse_y, x, SCR_H - 11, 40, 10)) {
+    x += btn_w + 2;
+
+    if (FilesWin.visible && PointInRect(mouse_x, mouse_y, x, SCR_H - 11, btn_w, 10)) {
+        if (FilesWin.minimized)
             FilesWin.minimized = 0;
-            active_window = 3;
-            return;
-        }
-        x += 44;
+        else
+            FilesWin.minimized = 1;
+        active_window = 3;
+        return;
     }
 }
 
@@ -84,7 +92,7 @@ void HandleTaskbarClick(void) {
 
 Routine Description:
 
-    Draws the taskbar with the OS name and buttons for minimized windows.
+    Draws the taskbar with all visible windows as buttons and highlights the active window.
 
 Arguments:
 
@@ -97,28 +105,55 @@ Return Value:
 --*/
 
 void DrawTaskbar(void) {
-    FillRect(0, SCR_H - 12, SCR_W, 12, 0x08);
-    DrawString(4, SCR_H - 10, "Everywhere OS", 0x0F);
+    int x = 105;
+    int btn_w = 70;
+    int btn_h = 10;
 
-    int x = 120;
-    if (ShellWin.visible && ShellWin.minimized) {
-        FillRect(x, SCR_H - 11, 40, 10, 0x03);
-        DrawString(x + 2, SCR_H - 10, "Shell", 0x0F);
-        x += 44;
+    if (ShellWin.visible) {
+        uint8_t bg = (active_window == 0) ? 0x0F : 0x03;
+        uint8_t fg = (active_window == 0) ? 0x00 : 0x0F;
+        FillRect(x, SCR_H - 11, btn_w, btn_h, bg);
+        FillRect(x + 1, SCR_H - 10, btn_w - 2, btn_h - 2, bg);
+        if (ShellWin.minimized)
+            DrawString(x + 3, SCR_H - 10, "[Shell]", fg);
+        else
+            DrawString(x + 5, SCR_H - 10, "Shell", fg);
+        x += btn_w + 2;
     }
-    if (NotesWin.visible && NotesWin.minimized) {
-        FillRect(x, SCR_H - 11, 40, 10, 0x03);
-        DrawString(x + 2, SCR_H - 10, "Notes", 0x0F);
-        x += 44;
+
+    if (NotesWin.visible) {
+        uint8_t bg = (active_window == 1) ? 0x0F : 0x03;
+        uint8_t fg = (active_window == 1) ? 0x00 : 0x0F;
+        FillRect(x, SCR_H - 11, btn_w, btn_h, bg);
+        FillRect(x + 1, SCR_H - 10, btn_w - 2, btn_h - 2, bg);
+        if (NotesWin.minimized)
+            DrawString(x + 3, SCR_H - 10, "[Notes]", fg);
+        else
+            DrawString(x + 5, SCR_H - 10, "Notes", fg);
+        x += btn_w + 2;
     }
-    if (SnakeWin.visible && SnakeWin.minimized) {
-        FillRect(x, SCR_H - 11, 40, 10, 0x03);
-        DrawString(x + 2, SCR_H - 10, "Snake", 0x0F);
-        x += 44;
+
+    if (SnakeWin.visible) {
+        uint8_t bg = (active_window == 2) ? 0x0F : 0x03;
+        uint8_t fg = (active_window == 2) ? 0x00 : 0x0F;
+        FillRect(x, SCR_H - 11, btn_w, btn_h, bg);
+        FillRect(x + 1, SCR_H - 10, btn_w - 2, btn_h - 2, bg);
+        if (SnakeWin.minimized)
+            DrawString(x + 3, SCR_H - 10, "[Snake]", fg);
+        else
+            DrawString(x + 5, SCR_H - 10, "Snake", fg);
+        x += btn_w + 2;
     }
-    if (FilesWin.visible && FilesWin.minimized) {
-        FillRect(x, SCR_H - 11, 40, 10, 0x03);
-        DrawString(x + 2, SCR_H - 10, "Files", 0x0F);
-        x += 44;
+
+    if (FilesWin.visible) {
+        uint8_t bg = (active_window == 3) ? 0x0F : 0x03;
+        uint8_t fg = (active_window == 3) ? 0x00 : 0x0F;
+        FillRect(x, SCR_H - 11, btn_w, btn_h, bg);
+        FillRect(x + 1, SCR_H - 10, btn_w - 2, btn_h - 2, bg);
+        if (FilesWin.minimized)
+            DrawString(x + 3, SCR_H - 10, "[Files]", fg);
+        else
+            DrawString(x + 5, SCR_H - 10, "Files", fg);
+        x += btn_w + 2;
     }
 }
