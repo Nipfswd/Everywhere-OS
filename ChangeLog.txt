@@ -62,3 +62,10 @@ Features
 00034 No way to open the file browser from the shell - added files command that opens the Files window
 (explorer)
 00035 No file browser window existed - added Files window (shell/explorer/files.c) showing EVRYFS directory listing with filename and size per row; accessible via files shell command or taskbar
+
+Fixes
+(fs)
+00036 EVRYFS v1 was a flat 12-entry stub with no real allocation, no directories, and no metadata - replaced with full MFT-based v2: boot sector with OEM ID and BPB-style fields, 2-sector cluster bitmap (8192 clusters), 128 MFT records of 512 bytes each ($Volume record 0, $Bitmap record 1, root dir record 2, user files from record 3), extent run-list allocation with up to 8 extents per file, partial-allocation fallback on fragmented volumes, subdirectory support via parent_record references, file attributes (archive/hidden/system/directory/readonly), stat, rename, delete, mkdir, rmdir, and volume label read/write
+00037 LookupInDir scanned from record 2 (root) instead of record 3 (first user record), wasting a read on the root record which can never be a child - changed scan start to EVRYFS_FIRST_USER_RECORD
+00038 EvryFsWriteFile did not free newly allocated clusters when MftWriteRecord failed, orphaning them permanently - now frees all new extents before returning -1 on MFT write failure
+00039 files.c called EvryFsList with 3 arguments matching old v1 signature, and used undefined EVRYFS_MAX_FILES constant - updated to 5-argument v2 call with NULL path (root) and NULL attrs, and changed array size to EVRYFS_LIST_MAX

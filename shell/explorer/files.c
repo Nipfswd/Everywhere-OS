@@ -22,6 +22,7 @@ Environment:
 --*/
 
 #include "explorer.h"
+#include <stddef.h>
 #include "evryfs.h"
 
 /* ---- Internal helpers -------------------------------------------------- */
@@ -104,11 +105,11 @@ void FilesDraw(void)
 {
     if (!FilesWin.visible || FilesWin.minimized) return;
 
-    char     names[EVRYFS_MAX_FILES][EVRYFS_NAME_LEN];
-    uint32_t sizes[EVRYFS_MAX_FILES];
+    char     names[EVRYFS_LIST_MAX][EVRYFS_NAME_LEN];
+    uint32_t sizes[EVRYFS_LIST_MAX];
     int      count = 0;
 
-    EvryFsList(names, sizes, &count);
+    EvryFsList(0, names, sizes, 0, &count);
 
     int y = FilesWin.y + 14;
 
