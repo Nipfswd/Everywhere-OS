@@ -8,7 +8,7 @@ Module Name:
 
 Abstract:
 
-    Shell command input and execution (clear, credits, snake, notes).
+    Shell command input and execution (clear, credits, snake, notes, help).
 
 Author:
 
@@ -76,7 +76,7 @@ void ShellDraw(void) {
 Routine Description:
 
     Executes the current shell command. Recognizes "clear", "credits",
-    "snake", and "notes".
+    "snake", "notes", "files", "mktest", and "help".
 
 Arguments:
 
@@ -117,6 +117,12 @@ void ShellExec(void) {
             msg = "No disk found";
         }
         while (msg[i] && i < 63) { shell_output[i] = msg[i]; i++; }
+        shell_output[i] = 0;
+        shell_has_output = 1;
+    } else if (StrEq(shell_input, "help")) {
+        static const char* cmds = "clear credits snake notes files mktest help";
+        int i = 0;
+        while (cmds[i] && i < 63) { shell_output[i] = cmds[i]; i++; }
         shell_output[i] = 0;
         shell_has_output = 1;
     }

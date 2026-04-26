@@ -53,5 +53,6 @@ Features
 (shell)
 00033 No way to create files from the shell - added mktest command that writes "Hello, World!\n" to hello.txt on the EVRYFS volume and shows "Created hello.txt" in the shell output line
 00034 No way to open the file browser from the shell - added files command that opens the Files window
+00036 No way to discover available commands - added help command that prints all command names to the shell output line
 (explorer)
 00035 No file browser window existed - added Files window (shell/explorer/files.c) showing EVRYFS directory listing with filename and size per row; accessible via files shell command or taskbar
