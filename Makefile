@@ -1,4 +1,4 @@
-# Makefile for Everywhere OS Kernel -- multi-module version
+# Main Makefile for the Everywhere OS Kernel
 
 CC      = gcc
 LD      = ld
