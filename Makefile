@@ -75,7 +75,7 @@ TEST_MMTEST_SRC = base/ntos/mm/tests/mmtest.c
 TEST_MMTEST_OBJ = $(BUILD)/base/ntos/mm/tests/mmtest.o
 TEST_ELF        = $(BUILD)/mmtest.elf
 
-QEMU_TESTFLAGS  = -nographic -serial stdio -m 64M -no-reboot
+QEMU_TESTFLAGS  = -display none -serial stdio -m 64M -no-reboot
 
 .PHONY: all clean run test
 

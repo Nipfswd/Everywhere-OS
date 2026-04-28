@@ -82,13 +82,13 @@ QEMU invocation
 The Makefile test target runs:
 
     qemu-system-i386 -kernel build/mmtest.elf \
-                     -nographic -serial stdio -m 64M -no-reboot
+                     -display none -serial stdio -m 64M -no-reboot
 
 -kernel       loads the ELF directly as a Multiboot kernel without
               requiring a GRUB rescue image.
 
--nographic    suppresses the graphical window; all QEMU console output
-              goes to the terminal.
+-display none suppresses the graphical window without claiming stdio
+              for the QEMU monitor (unlike -nographic which does).
 
 -serial stdio redirects COM1 to the host's stdin/stdout.
 
