@@ -1698,12 +1698,13 @@ MmTestCaseSizeVariants(
 
 /*
  * Maximum number of fixed-size blocks the exhaustion tests will attempt
- * to allocate.  With a 4 MB fallback pool and 4 KB per block we can
- * accommodate 4 * 1024 * 1024 / (4096 + 24) = approximately 996 blocks
- * before the pool is truly exhausted.  2048 entries is safe headroom.
+ * to allocate.  With a pool up to 128 MB and 4 KB per block we need up
+ * to 128*1024*1024 / (4096 + 24) = ~32,500 slots to guarantee exhaustion
+ * on the largest possible pool.  32768 entries (128 KB of BSS on 32-bit)
+ * is safe headroom; the array is in .bss so it does not bloat the ELF.
  */
 #define MMTEST_EXHAUST_BLOCK_SIZE   4096U
-#define MMTEST_EXHAUST_ARRAY_SIZE   2048U
+#define MMTEST_EXHAUST_ARRAY_SIZE   32768U
 
 static void *MmTestExhaustPtrs[MMTEST_EXHAUST_ARRAY_SIZE];
 
