@@ -1,5 +1,9 @@
 1.0.1 (2026/04/20)
 
+Features
+(build)
+00037 'make test' QEMU session would hang in CI because the guest executes cli;hlt which does not cause QEMU to exit -- updated test target to enforce a 30-second timeout via the coreutils 'timeout' command, redirect COM1 serial output to build/test.log, print the log to the terminal after QEMU exits, and exit non-zero when the final "PASS" banner is absent from the log
+
 Fixes
 (common)
 00001 Font rendering shows identical blocks for all characters - replaced with proper 8x8 bitmap font (ASCII 32-126)
