@@ -75,7 +75,7 @@ TEST_MMTEST_SRC = base/ntos/mm/tests/mmtest.c
 TEST_MMTEST_OBJ = $(BUILD)/base/ntos/mm/tests/mmtest.o
 TEST_ELF        = $(BUILD)/mmtest.elf
 
-QEMU_TESTFLAGS  = -display none -serial stdio -m 64M -no-reboot
+QEMU_TESTFLAGS  = -display none -m 64M -no-reboot
 
 .PHONY: all clean run test
 
@@ -136,7 +136,10 @@ $(TEST_ELF): $(TEST_ENTRY_OBJ) \
 	$(LD) $(LDFLAGS) $^ -o $@
 
 test: $(TEST_ELF)
-	qemu-system-i386 -kernel $< $(QEMU_TESTFLAGS)
+	timeout 30 qemu-system-i386 -kernel $< $(QEMU_TESTFLAGS) \
+	    -serial file:$(BUILD)/test.log || true
+	@cat $(BUILD)/test.log
+	grep -q "^PASS" $(BUILD)/test.log
 
 clean:
 	rm -rf $(BUILD) $(ISO)

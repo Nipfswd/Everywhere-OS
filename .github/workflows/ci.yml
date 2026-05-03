@@ -1,0 +1,63 @@
+# CI pipeline for Everywhere OS
+#
+# Triggered on every push and pull request against any branch.
+#
+# Jobs
+# ----
+#   build-and-test
+#     1. Install the cross-compilation toolchain and system tools needed to
+#        build the kernel, create the bootable ISO, and run the MM
+#        regression suite under QEMU.
+#     2. Build the ISO via 'make'.
+#     3. Run the bare-metal MM regression suite via 'make test'.
+#        The test target routes COM1 serial output to build/test.log,
+#        enforces a 30-second QEMU timeout, and exits non-zero when the
+#        suite's final banner is not "PASS".
+#     4. Upload the ISO and test log as build artifacts.
+#
+# Badge
+# -----
+# Add the following line to README.md to display the live status badge:
+#
+#   [![CI](https://github.com/claysanders157-art/Everywhere-OSactions/workflows/ci.yml/badge.svg)](https://github.com/claysanders157-art/Everywhere-OS/actions/workflows/ci.yml)
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source tree
+        uses: actions/checkout@v4
+
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            gcc-multilib \
+            nasm \
+            xorriso \
+            mtools \
+            grub-pc-bin \
+            grub-common \
+            qemu-system-x86
+
+      - name: Build bootable ISO
+        run: make
+
+      - name: Run MM regression suite
+        run: make test
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: everywhere-os-build
+          path: |
+            build/os.iso
+            build/test.log
